@@ -47,9 +47,11 @@ private:
   std::complex<F> when_intersecting(F r0, Circle<F> c1, F m1) noexcept {
     std::complex<F> B;
     for (auto &&p : disk) {
-      auto q = c1 - p, r = std::abs(q);
+      auto q = c1 - p;
+      auto r = std::abs(q);
       if (r > c1.radius) {
-        auto s = F(1) / r, dB = s * s * s * q;
+        auto s = F(1) / r;
+        auto dB = s * s * s * q;
         B += dB;
       }
     }
