@@ -2,7 +2,7 @@
 #define GRASS_NEWTON_H
 
 /// @file newton.h
-/// @brief Computation of Newtoninan gravitaty.
+/// @brief Computation of Newtonian gravity.
 
 #include <algorithm>
 #include <array>

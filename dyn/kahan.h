@@ -6,7 +6,7 @@
 
 namespace dyn {
 
-/// @brief Kahan's compensated summation. Denormal numbers must be enabled.
+/// @brief Kahan's compensated summation. Subnormal numbers must be enabled.
 /// @tparam T A type that supports initialization, addition, subtraction, and
 /// copy.
 template <typename T = float> class Kahan {
@@ -34,7 +34,7 @@ public:
     // - For any two T values t and s and a certain T-type constant "0," it must
     // be that (t-s == 0) if and only if (t == s).
     // - If T is a floating-point type, this condition implies the existence of
-    // denormal numbers.
+    // subnormal numbers.
     auto y = v - e, t = a + y;
     return e = t - a - y, a = t, *this;
   }
