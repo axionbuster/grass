@@ -12,7 +12,6 @@ namespace dyn {
 
 template <typename F = float, unsigned short N_MONTE = 30> class Gravity {
   std::array<std::complex<F>, 2 * N_MONTE> disk{};
-  F G{1};
 
 public:
   Gravity() noexcept { init_disk(); }
@@ -32,6 +31,8 @@ public:
       // Contains (no force)
       return 0;
   }
+
+  F G{1};
 
 private:
   void init_disk() noexcept {

@@ -29,9 +29,11 @@ endif ()
 # Use wWinMain() as entry point (if on Windows).
 set(CMAKE_WIN32_EXECUTABLE TRUE)
 
-add_executable(grass main.cpp)
+add_executable(grass main.cpp
+        Table.h)
 
 target_link_libraries(grass raylib)
+target_link_libraries(grass dyn)
 
 # Header file too big; use precompiled header.
 target_precompile_headers(grass INTERFACE <raylib.h>)
