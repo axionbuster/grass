@@ -45,18 +45,17 @@ private:
   }
 
   std::complex<F> when_intersecting(F r0, Circle<F> c1, F m1) noexcept {
-    Kahan<std::complex<F>> B;
+    std::complex<F> B;
     for (auto &&p : disk) {
       auto q = c1 - p;
       auto r = std::abs(q);
-      if (r <= c1.radius)
-        continue;
-      auto s = F(1) / r;
-      auto dB = s * s * s * q;
-      B += dB;
+      if (r > c1.radius) {
+        auto s = F(1) / r;
+        auto dB = s * s * s * q;
+        B += dB;
+      }
     }
-    auto constexpr premultiply = F(1) / F(N_MONTE);
-    return premultiply * m1 * B();
+    return F(1) / F(N_MONTE) * m1 * G * B();
   }
 };
 
