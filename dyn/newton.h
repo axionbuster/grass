@@ -89,7 +89,7 @@ private:
       if (r > c1.radius) {
         // Give up a bit of accuracy for speed.
         auto s = F(1) / r;
-        auto dB = s * s * s * (c1 - r0 * p);
+        auto dB = s * s * s * (c1 - r0 * p.real());
         B += dB;
       }
     }
