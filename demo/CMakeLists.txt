@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.27)
 
 # Gravity
 
-# Download Raylib.
+# Download Raylib: from Raylib's docs.
 
 # Generate compile_commands.json
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -25,6 +25,9 @@ if (NOT raylib_FOUND) # If there's none, fetch and build raylib
         add_subdirectory(${raylib_SOURCE_DIR} ${raylib_BINARY_DIR})
     endif ()
 endif ()
+
+# Use wWinMain() as entry point.
+set(CMAKE_WIN32_EXECUTABLE TRUE)
 
 add_executable(grass main.cpp)
 

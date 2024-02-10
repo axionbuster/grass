@@ -1,10 +1,6 @@
-//
-// Created by YuJin Kim on 2/9/24.
-//
-
 #include <raylib.h>
 
-int do_main() {
+static int do_main() {
   InitWindow(600, 600, "a");
   SetTargetFPS(90);
   while (!WindowShouldClose()) {

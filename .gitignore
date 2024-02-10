@@ -1,2 +1,7 @@
 /.vscode/
 /cmake-build-debug/
+/.vs
+/out
+/CMakeSettings.json
+/vc140.idb
+/vc140.pdb
