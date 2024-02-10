@@ -11,7 +11,7 @@
 namespace dyn {
 
 template <typename F = float, unsigned short N_MONTE = 30> class Gravity {
-  std::array<std::complex<F>, 2 * N_MONTE> disk{};
+  std::array<std::complex<F>, N_MONTE> disk{};
 
 public:
   F G{1};
@@ -43,10 +43,8 @@ private:
     for (int i = 0; i < 1234; i++)
       h2.xy(), h3.xy();
 
-    for (unsigned short i = 0; i < N_MONTE; i++)
-      disk[i] = dyn::disk(std::complex<F>{h2.xy(), h3.xy()});
-    for (unsigned short i = 0; i < N_MONTE; i++)
-      disk[N_MONTE + i] = std::conj(disk[i]);
+    for (auto &&p : disk)
+      p = dyn::disk(std::complex<F>{h2.xy(), h3.xy()});
   }
 
   std::complex<F> when_intersecting(F r0, Circle<F> c1, F m1) noexcept {
@@ -56,11 +54,11 @@ private:
       auto r = std::abs(q);
       if (r > c1.radius) {
         auto s = F(1) / r;
-        auto dB = s * s * s * q;
+        auto dB = s * s * s * (c1 - p.real());
         B += dB;
       }
     }
-    return F(0.5) / F(N_MONTE) * m1 * G * B;
+    return F(1) / F(N_MONTE) * m1 * G * B;
   }
 };
 
