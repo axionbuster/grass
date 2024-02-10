@@ -2,7 +2,7 @@
 #define GRASS_KAHAN_H
 
 namespace dyn {
-template <typename T> class Kahan {
+template <typename T = float> class Kahan {
   T a{}, e{};
 
 public:
