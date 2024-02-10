@@ -7,7 +7,6 @@
 
 #include "circle.h"
 #include "halton.h"
-#include "kahan.h"
 
 namespace dyn {
 
