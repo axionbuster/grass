@@ -16,8 +16,8 @@ template <typename F = float, unsigned short N_MONTE = 30> class Gravity {
   F G{1};
 
 public:
-  Gravity() { init_disk(); }
-  explicit Gravity(F G) : G{G} { init_disk(); }
+  Gravity() noexcept { init_disk(); }
+  explicit Gravity(F G) noexcept : G{G} { init_disk(); }
 
   std::complex<F> field(Circle<F> c0, Circle<F> c1, F m1) noexcept {
     c1 -= c0, c0 -= c0;
@@ -35,7 +35,7 @@ public:
   }
 
 private:
-  constexpr void init_disk() {
+  void init_disk() noexcept {
     Halton<F, 2> h2;
     Halton<F, 3> h3;
     for (unsigned short i = 0; i < N_MONTE; i++)
