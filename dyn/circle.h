@@ -8,7 +8,7 @@ namespace dyn {
 template <typename F = float> struct Circle : public std::complex<F> {
   F radius{1};
   constexpr Circle() = default;
-  consteval Circle(std::complex<F> center, F radius)
+  constexpr Circle(std::complex<F> center, F radius)
       : std::complex<F>(center), radius(radius) {}
 };
 
