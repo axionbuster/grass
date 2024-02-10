@@ -14,7 +14,7 @@ static int do_main() {
 
 #if defined(_WIN32)
 
-int wWinMain(void **_0, void **_1, void **_2, int _3) { return do_main(); }
+int WinMain(void **_0, void **_1, void **_2, int _3) { return do_main(); }
 
 #else
 

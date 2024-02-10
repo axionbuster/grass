@@ -26,12 +26,15 @@ if (NOT raylib_FOUND) # If there's none, fetch and build raylib
     endif ()
 endif ()
 
-# Use wWinMain() as entry point.
+# Use wWinMain() as entry point (if on Windows).
 set(CMAKE_WIN32_EXECUTABLE TRUE)
 
 add_executable(grass main.cpp)
 
 target_link_libraries(grass raylib)
+
+# Header file too big; use precompiled header.
+target_precompile_headers(grass INTERFACE "raylib.h")
 
 if (APPLE)
     target_link_libraries(grass "-framework IOKit")
