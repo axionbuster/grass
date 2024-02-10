@@ -9,6 +9,8 @@ set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
 # Now simply link against gtest or gtest_main as needed. Eg
-add_executable(units test1.cpp)
+add_executable(units yoshida_test.cpp)
 target_link_libraries(units gtest_main)
 target_precompile_headers(units INTERFACE "gtest/gtest.h")
+
+target_link_libraries(units dyn)

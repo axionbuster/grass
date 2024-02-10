@@ -7,7 +7,7 @@
 
 namespace dyn {
 
-template <typename F> struct Yoshida {
+template <typename F = float> struct Yoshida {
   std::complex<F> y0, y1;
   constexpr Yoshida() = default;
   constexpr Yoshida(std::complex<F> y0, std::complex<F> y1) : y0{y0}, y1{y1} {}
@@ -30,8 +30,6 @@ template <typename F> struct Yoshida {
     y0 += C3 * h * y1;
     y1 += D3 * h * y2(y0);
     y0 += C4 * h * y1;
-
-    return *this;
   }
 };
 
