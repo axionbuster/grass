@@ -5,6 +5,4 @@
 /CMakeSettings.json
 /vc140.idb
 /vc140.pdb
-/cmake-build-release/
-/cmake-build-debug-visual-studio/
-/cmake-build-release-visual-studio/
+/cmake-build-*
