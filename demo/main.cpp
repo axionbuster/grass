@@ -19,7 +19,7 @@ static int do_main() {
     return std::abs(p.kin.y0) > 5'000.0f;
   };
 
-  InitWindow(600, 600, "Basic 500 particle demo (click to add particles)");
+  InitWindow(600, 600, "Basic 1,000 particle demo (click to add particles)");
 
   // The physical table (store particles, etc.); backup.
   Table table, table0;
