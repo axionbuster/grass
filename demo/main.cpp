@@ -12,7 +12,7 @@
 using namespace phy;
 
 static int do_main() {
-  auto constexpr PARTICLES_LIMIT = 500;
+  auto constexpr PARTICLES_LIMIT = 1'000;
   auto constexpr RADIUS = 0.05f;
   auto constexpr MASS = 1.0f;
   auto constexpr too_far = [](Particle &p) {
@@ -71,7 +71,9 @@ static int do_main() {
     unsigned short target_fps{90};
     double last_sec{GetTime()};
     constexpr explicit operator bool() const { return on; }
-    [[nodiscard]] constexpr float target_dt() const { return 1.0f / float(target_fps); }
+    [[nodiscard]] constexpr float target_dt() const {
+      return 1.0f / float(target_fps);
+    }
   } interactive;
 
   SetTargetFPS(interactive.target_fps);
