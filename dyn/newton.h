@@ -61,10 +61,10 @@ private:
     // Fill `disk` with random points on unit disk centered about origin
     // by rejection sampling.
     for (auto &&p : disk) {
-      auto q = F(2) * std::complex<F>{h2.x01(), h3.x01()} -
-               std::complex<F>{F(1), F(1)};
-      if (std::norm(q) < F(1))
-        p = q;
+      do {
+        p = F(2) * std::complex<F>{h2.x01(), h3.x01()} -
+            std::complex<F>{F(1), F(1)};
+      } while (std::norm(p) >= F(1));
     }
 
     // Attempt to improve branch prediction somewhat by sorting the points about
