@@ -45,7 +45,7 @@ private:
   }
 
   std::complex<F> when_intersecting(F r0, Circle<F> c1, F m1) noexcept {
-    Kahan<F> B;
+    Kahan<std::complex<F>> B;
     for (auto &&p : disk) {
       auto q = c1 - p;
       auto r = std::abs(q);
