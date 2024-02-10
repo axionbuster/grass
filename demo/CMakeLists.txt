@@ -34,7 +34,7 @@ add_executable(grass main.cpp)
 target_link_libraries(grass raylib)
 
 # Header file too big; use precompiled header.
-target_precompile_headers(grass INTERFACE "raylib.h")
+target_precompile_headers(grass INTERFACE <raylib.h>)
 
 if (APPLE)
     target_link_libraries(grass "-framework IOKit")
