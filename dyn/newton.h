@@ -14,6 +14,8 @@ template <typename F = float, unsigned short N_MONTE = 30> class Gravity {
   std::array<std::complex<F>, 2 * N_MONTE> disk{};
 
 public:
+  F G{1};
+
   Gravity() noexcept { init_disk(); }
   explicit Gravity(F G) noexcept : G{G} { init_disk(); }
 
@@ -32,12 +34,15 @@ public:
       return 0;
   }
 
-  F G{1};
-
 private:
   void init_disk() noexcept {
     Halton<F, 2> h2;
     Halton<F, 3> h3;
+
+    // Skip the first few terms.
+    for (int i = 0; i < 1234; i++)
+      h2.xy(), h3.xy();
+
     for (unsigned short i = 0; i < N_MONTE; i++)
       disk[i] = dyn::disk(std::complex<F>{h2.xy(), h3.xy()});
     for (unsigned short i = 0; i < N_MONTE; i++)
