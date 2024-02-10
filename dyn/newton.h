@@ -58,7 +58,7 @@ public:
     // Each Halton sequence (a kind of low-discrepancy sequence) creates an
     // evenly spaced set of points on the unit interval (0, 1); unlike the
     // uniform distribution, however, the points look "uniformly distributed"
-    // (number of points being mostly proportional to length of any subinterval)
+    // (number of points being mostly proportional to length of any subset)
     // even for a finite sample of points.
     Halton<F, 2> h2;
     Halton<F, 3> h3;
