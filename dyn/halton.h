@@ -15,7 +15,7 @@ public:
     F r = 0, f = 1;
     while (i)
       f /= b, r += f * (i % b), i /= b;
-    return i;
+    return r;
   }
 
   constexpr F x01() { return x01(i = (i % LIM) + 1); }
