@@ -55,7 +55,7 @@ private:
         B += dB;
       }
     }
-    return F(1) / F(N_MONTE) * m1 * G * B;
+    return F(0.5) / F(N_MONTE) * m1 * G * B;
   }
 };
 
