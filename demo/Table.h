@@ -1,7 +1,6 @@
 #ifndef GRASS_TABLE_H
 #define GRASS_TABLE_H
 
-#include <algorithm>
 #include <vector>
 
 #include <circle.h>

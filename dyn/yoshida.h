@@ -1,18 +1,34 @@
 #ifndef GRASS_YOSHIDA_H
 #define GRASS_YOSHIDA_H
 
-// Yoshida fourth-order integrator.
+/// @file yoshida.h
+/// @brief Yoshida's fourth-order symplectic (area-preserving) integrator.
 
 #include <complex>
 
 namespace dyn {
 
+/// @brief Yoshida's fourth-order symplectic (area-preserving) integrator for
+/// complex numbers. "Area-preserving" integrators will preserve the energy of a
+/// system of differential equations.
+/// @tparam F A floating-point type.
 template <typename F = float> struct Yoshida {
+  /// @brief The zeroth and first derivatives, respectively.
   std::complex<F> y0, y1;
+
+  /// @brief Create a zero-initialized instance.
   constexpr Yoshida() = default;
+
+  /// @brief Instantiate with given zeroth and first derivative values.
   constexpr Yoshida(std::complex<F> y0, std::complex<F> y1) : y0{y0}, y1{y1} {}
 
-  template <typename A> void step(F h, A y2) {
+  /// @brief Compute the second derivative three times with slightly different
+  /// zeroth-derivative values (y0) and update both the zeroth- and
+  /// first-derivative values of the internal state.
+  /// @param y2 An effectively stateless function that takes in a complex
+  /// zeroth-derivative value and computes the complex second-derivative.
+  /// @param h Step size (finite, positive number).
+  template <typename Y2> void step(F h, Y2 y2) {
     // Algorithm and constants are due to Wikipedia.
 
     auto constexpr CBRT2 = F(1.259921049894873164767L);

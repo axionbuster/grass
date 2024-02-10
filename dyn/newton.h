@@ -1,6 +1,9 @@
 #ifndef GRASS_NEWTON_H
 #define GRASS_NEWTON_H
 
+/// @file newton.h
+/// @brief Computation of Newtoninan gravitaty.
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -13,6 +16,8 @@ namespace dyn {
 
 /// @brief Compute the Newtonian gravitational interaction between pairs of
 /// circles, taking into account when they are too close to one another.
+/// @tparam F A floating-point type.
+/// @tparam N_MONTE Number of Monte Carlo trials.
 template <typename F = float, unsigned short N_MONTE = 30> class Gravity {
   /// @brief Quasi-random points on the unit disk centered about the origin used
   /// for Monte Carlo integration in the case of overlapping circles.
@@ -23,7 +28,7 @@ public:
   F G{1};
 
   /// @brief Create an instance with a quasi-random internal state.
-  constexpr Gravity() { init_disk(); }
+  constexpr Gravity() { refresh_disk(); }
 
   /// @brief Compute the acceleration that a test particle represented by the
   /// circle c0 due to a mass of circle c1 and mass m1.
@@ -42,28 +47,31 @@ public:
       // Intersecting?
       return when_intersecting(c0.radius, c1, m1);
     else
-      // Or, one circle fully contains other?
-      return 0;
+      // Or, does one circle fully contain the other?
+      return F(0);
   }
 
-private:
-  /// @brief Populate `disk` with evenly distributed points on the unit disk
-  /// centered about the origin.
-  constexpr void init_disk() {
-    // Halton sequences make an evenly distributed grid of points.
+  /// @brief Populate internal random disk (used for calculating forces in the
+  /// case of intersecting circles) with new evenly distributed points on the
+  /// unit disk centered about the origin. Call time to time.
+  constexpr void refresh_disk() {
+    // Each Halton sequence (a kind of low-discrepancy sequence) creates an
+    // evenly spaced set of points on the unit interval (0, 1); unlike the
+    // uniform distribution, however, the points look "uniformly distributed"
+    // (number of points being mostly proportional to length of any subinterval)
+    // even for a finite sample of points.
     Halton<F, 2> h2;
     Halton<F, 3> h3;
-
-    // Skip the first few terms.
-    for (int i = 0; i < 1234; i++)
-      h2.x01(), h3.x01();
 
     // Fill `disk` with random points on unit disk centered about origin
     // by rejection sampling.
     for (auto &&p : disk) {
       do {
+        // Scale and move (0,1) x (0,1) square to (-1,1) x (-1,1) square.
         p = F(2) * std::complex<F>{h2.x01(), h3.x01()} -
             std::complex<F>{F(1), F(1)};
+        // Use of `norm` makes this function constexpr (where `abs` or
+        // trigonometric functions are not allowed as of C++20).
       } while (std::norm(p) >= F(1));
     }
 
@@ -73,13 +81,20 @@ private:
               [](auto p, auto q) { return p.real() < q.real(); });
   }
 
+private:
+  /// @brief Compute the acceleration that a test particle (center of radius r0)
+  /// at the origin feels due to the presence of source particle (represented by
+  /// the circle c1) with mass m1.
+  /// @param r0 Radius of the test particle (at the origin).
+  /// @param c1 Center and radius of source particle.
+  /// @param m1 Mass of particle c1.
+  /// @return Acceleration [L/T/T].
   std::complex<F> when_intersecting(F r0, Circle<F> c1, F m1) const noexcept {
-    // Chop "c0" (here, c0 is centered about the origin, and only the radius
-    // r0 is relevant) into small pieces, assuming that the mass is proportional
-    // to the area of each piece. Then, add up the small forces for the pieces
-    // that are outside c1, but ignore the pieces inside c1, by application of
-    // Newton's shell theorem, which says that, within a radially symmetric
-    // shell of a body, all gravitational forces due to that body cancel out.
+    // Assuming uniform mass distribution (by area), divide the test particle's
+    // circle into many small pieces. To each particle, apply Newton's shell
+    // theorem: (a) Inside a radially symmetrical body, no force is felt due to
+    // that body; (b) outside it, the force is as though its mass [m1] was
+    // concentrated at the center of it [c1].
 
     // Unweighted inverse-square summation (B).
     std::complex<F> B;
@@ -89,6 +104,7 @@ private:
       if (r > c1.radius) {
         // Give up a bit of accuracy for speed.
         auto s = F(1) / r;
+        // Cancel out the non-radial component.
         auto dB = s * s * s * (c1 - r0 * p.real());
         B += dB;
       }
