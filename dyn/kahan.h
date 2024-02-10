@@ -7,10 +7,7 @@ template <typename T> class Kahan {
 
 public:
   Kahan() = default;
-#pragma clang diagnostic push
-#pragma ide diagnostic ignored "google-explicit-constructor"
-  Kahan(T a) : a{a} {};
-#pragma clang diagnostic pop
+  explicit Kahan(T a) : a{a} {};
   constexpr T operator()() const { return a; }
   constexpr Kahan &add(T v) {
     auto y = v - e, t = a + y;
