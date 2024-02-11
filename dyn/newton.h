@@ -102,17 +102,15 @@ private:
       auto q = c1 - r0 * p;
       auto r = std::abs(q);
       if (r > c1.radius) {
-        // Give up a bit of accuracy for speed.
         auto s = F(1) / r;
-        // Cancel out the non-radial component.
-        auto dB = s * s * s * (c1 - r0 * p.real());
+        auto dB = s * s * s * (c1 - r0 * p);
         B += dB;
       }
     }
 
     // Converting constexpr integer N_MONTE to floating point constexpr is
     // helpful because it reduces burden due to type conversion on CPU.
-    return F(0.5) / F(N_MONTE) * m1 * G * B;
+    return F(1) / F(N_MONTE) * m1 * G * B;
   }
 };
 
