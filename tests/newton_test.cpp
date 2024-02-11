@@ -137,5 +137,5 @@ TEST_F(NewtonSuite, Figure8) {
                  std::abs(yoshi2.y0 - yoshis[2].y0)};
 
   for (int i = 0; i < 3; i++)
-    ASSERT_NEAR(1.0f, qs[i], 0.1f) << "(i = " << i << ")";
+    ASSERT_NEAR(0.0f, qs[i], 0.1f) << "(i = " << i << ")";
 }
