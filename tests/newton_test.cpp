@@ -42,6 +42,7 @@ TEST_F(NewtonSuite, PassThrough0) {
   auto constexpr S2 = std::numbers::sqrt2_v<float>;
   dyn::Yoshida<> yoshi{c0 + S2 + S2 * 1.0if, 0};
 
+  // 90 steps : 1 second = 1800 steps : 20 seconds
   auto constexpr steps = 1800;
   auto accel = [&](auto xy) { return this->common_accel(xy, c0); };
   for (int i = 0; i < steps; i++) {
