@@ -54,6 +54,13 @@ jobs:
       run: |
         echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
 
+    - name: Install Clang 18 (Ubuntu with Clang)
+      if: matrix.os == 'ubuntu-latest' && matrix.cpp_compiler == 'clang++'
+      run: |
+        wget https://apt.llvm.org/llvm.sh
+        chmod u+x ./llvm.sh
+        sudo ./llvm.sh 18
+
     - name: Install Raylib dependencies (Ubuntu)
       id: install-deps-u
       if: matrix.os == 'ubuntu-latest'
