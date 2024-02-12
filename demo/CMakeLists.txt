@@ -37,8 +37,8 @@ target_link_libraries(grass dyn)
 
 # Header file too big; use precompiled header.
 target_precompile_headers(grass INTERFACE <raylib.h>
-  <algorithm> <cfenv> <cmath> <complex> <sstream> <vector>
-  <array>)
+        <algorithm> <cfenv> <cmath> <complex> <sstream> <vector>
+        <array>)
 
 if (APPLE)
     target_link_libraries(grass "-framework IOKit")
