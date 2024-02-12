@@ -49,11 +49,6 @@ jobs:
       shell: bash
       run: |
         echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
-    
-    - name: On macOS, put clang-17 in PATH
-      if: matrix.os == 'macos-latest'
-      run: |
-        echo "PATH=$HOMEBREW_PREFIX/opt/llvm/bin:$PATH" >> "$GITHUB_ENV"
 
     - name: Install Clang 17 (Ubuntu with Clang)
       if: matrix.os == 'ubuntu-latest' && matrix.c_compiler == 'clang-17'
@@ -62,18 +57,26 @@ jobs:
         chmod u+x ./llvm.sh
         sudo ./llvm.sh 17
 
-    - name: Install Clang 17 (macOS)
-      if: matrix.os == 'macos-latest'
-      run: |
-        brew install llvm@17
-        echo "$PATH"
-
     - name: Install Raylib dependencies (Ubuntu)
       id: install-deps-u
       if: matrix.os == 'ubuntu-latest'
       run: >
         sudo apt install libasound2-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libglu1-mesa-dev
         libxcursor-dev libxinerama-dev
+
+    - name: Install Clang 17 (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        brew install llvm@17
+        echo "$PATH"
+
+    - name: On macOS, put clang-17 in PATH
+      if: matrix.os == 'macos-latest'
+      run: |
+        echo "PATH=/usr/local/opt/llvm/bin:$PATH" >> "$GITHUB_ENV"
+
+    - name: Cache
+      uses: actions/cache@v4.0.0
 
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
