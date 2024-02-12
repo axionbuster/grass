@@ -23,25 +23,22 @@ jobs:
       #
       # To add more build types (Release, Debug, RelWithDebInfo, etc.) customize the build_type list.
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [macos-latest]
         build_type: [Release]
         include:
-          - os: windows-latest
-            c_compiler: cl
-            cpp_compiler: cl
-          - os: ubuntu-latest
-            c_compiler: gcc
-            cpp_compiler: g++
-          - os: ubuntu-latest
+          # - os: windows-latest
+          #   c_compiler: cl
+          #   cpp_compiler: cl
+          # - os: ubuntu-latest
+          #   c_compiler: gcc
+          #   cpp_compiler: g++
+          # - os: ubuntu-latest
+          #   c_compiler: clang-17
+          #   cpp_compiler: clang++-17
+          - os: macos-latest
             c_compiler: clang-17
             cpp_compiler: clang++-17
-          - os: macos-latest
-            c_compiler: clang
-            cpp_compiler: clang++
-            env:
-              - LDFLAGS: -L/usr/local/opt/llvm/lib/c++ -Wl,-rpath,$HOMEBREW_PREFIX/opt/llvm/lib/c++
-              - CPPFLAGS: -I/usr/local/opt/llvm/include
-              - PATH: /usr/local/opt/llvm/bin:$PATH
 
     steps:
     - uses: actions/checkout@v3
@@ -52,6 +49,11 @@ jobs:
       shell: bash
       run: |
         echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
+    
+    - name: On macOS, put clang-17 in PATH
+      if: matrix.os == 'macos-latest'
+      run: |
+        echo "PATH=$HOMEBREW_PREFIX/opt/llvm/bin:$PATH" >> "$GITHUB_ENV"
 
     - name: Install Clang 17 (Ubuntu with Clang)
       if: matrix.os == 'ubuntu-latest' && matrix.c_compiler == 'clang-17'
