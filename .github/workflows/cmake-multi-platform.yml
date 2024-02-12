@@ -1,5 +1,3 @@
-# This starter workflow is for a CMake project running on multiple platforms. There is a different starter workflow if you just want a single platform.
-# See: https://github.com/actions/starter-workflows/blob/main/ci/cmake-single-platform.yml
 name: CMake on multiple platforms
 
 on:
@@ -13,13 +11,12 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     strategy:
-      # Set fail-fast to false to ensure that feedback is delivered for all matrix combinations. Consider changing this to true when your workflow is stable.
-      fail-fast: false
+      fail-fast: true
 
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        c_compiler: [gcc, clang-17, cl, clang]
-        build_type: [RelWithDebInfo]
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
+        c_compiler: [ gcc, clang-17, cl, clang ]
+        build_type: [ RelWithDebInfo ]
         exclude:
           - os: ubuntu-latest
             c_compiler: cl
@@ -52,53 +49,55 @@ jobs:
             cpp_compiler: clang++
 
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-    - name: Set reusable strings
-      # Turn repeated input strings (such as the build output directory) into step outputs. These step outputs can be used throughout the workflow file.
-      id: strings
-      shell: bash
-      run: |
-        echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
+      - name: Set reusable strings
+        # Turn repeated input strings (such as the build output directory) into step outputs.
+        # These step outputs can be used throughout the workflow file.
+        id: strings
+        shell: bash
+        run: |
+          echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
 
-    - name: Install Clang 17 (Ubuntu with Clang)
-      if: matrix.os == 'ubuntu-latest' && matrix.c_compiler == 'clang-17'
-      run: |
-        wget https://apt.llvm.org/llvm.sh
-        chmod u+x ./llvm.sh
-        sudo ./llvm.sh 17
+      - name: Install Clang 17 (Ubuntu with Clang)
+        if: matrix.os == 'ubuntu-latest' && matrix.c_compiler == 'clang-17'
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod u+x ./llvm.sh
+          sudo ./llvm.sh 17
 
-    - name: Install Raylib dependencies (Ubuntu)
-      id: install-deps-u
-      if: matrix.os == 'ubuntu-latest'
-      run: >
-        sudo apt install libasound2-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libglu1-mesa-dev
-        libxcursor-dev libxinerama-dev
+      - name: Install Raylib dependencies (Ubuntu)
+        id: install-deps-u
+        if: matrix.os == 'ubuntu-latest'
+        run: >
+          sudo apt install libasound2-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libglu1-mesa-dev
+          libxcursor-dev libxinerama-dev
 
-    - name: Install Clang 17 (macOS)
-      if: matrix.os == 'macos-latest'
-      run: |
-        brew install llvm@17
-        echo "/usr/local/opt/llvm/bin" >> "$GITHUB_PATH"
-        echo "$PATH"
-        ls /usr/local/opt/llvm/bin
+      - name: Install Clang 17 (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install llvm@17
+          echo "/usr/local/opt/llvm/bin" >> "$GITHUB_PATH"
 
-    - name: Configure CMake
-      # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
-      # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
-      run: >
-        cmake -B ${{ steps.strings.outputs.build-output-dir }}
-        -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
-        -DCMAKE_C_COMPILER=${{ matrix.c_compiler }}
-        -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-        -S ${{ github.workspace }}
+      - name: Configure CMake
+        # Configure CMake in a 'build' subdirectory.
+        # `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
+        # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
+        run: >
+          cmake -B ${{ steps.strings.outputs.build-output-dir }}
+          -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
+          -DCMAKE_C_COMPILER=${{ matrix.c_compiler }}
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -S ${{ github.workspace }}
 
-    - name: Build
-      # Build your program with the given configuration. Note that --config is needed because the default Windows generator is a multi-config generator (Visual Studio generator).
-      run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }}
+      - name: Build
+        # Build your program with the given configuration. Note that --config is needed because the default Windows
+        # generator is a multi-config generator (Visual Studio generator).
+        run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }}
 
-    - name: Test
-      working-directory: ${{ steps.strings.outputs.build-output-dir }}
-      # Execute tests defined by the CMake configuration. Note that --build-config is needed because the default Windows generator is a multi-config generator (Visual Studio generator).
-      # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
-      run: ctest --build-config ${{ matrix.build_type }}
+      - name: Test
+        working-directory: ${{ steps.strings.outputs.build-output-dir }}
+        # Execute tests defined by the CMake configuration. Note that --build-config is needed because the default
+        # Windows generator is a multi-config generator (Visual Studio generator).
+        # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
+        run: ctest --build-config ${{ matrix.build_type }}
