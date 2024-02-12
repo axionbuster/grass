@@ -23,9 +23,9 @@ jobs:
       #
       # To add more build types (Release, Debug, RelWithDebInfo, etc.) customize the build_type list.
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-14-arm64]
         build_type: [Release]
-        c_compiler: [gcc, clang-18, cl]
+        c_compiler: [gcc, clang-17, cl]
         include:
           - os: windows-latest
             c_compiler: cl
@@ -34,15 +34,20 @@ jobs:
             c_compiler: gcc
             cpp_compiler: g++
           - os: ubuntu-latest
-            c_compiler: clang-18
-            cpp_compiler: clang++-18
+            c_compiler: clang-17
+            cpp_compiler: clang++-17
+          - os: macos-14-arm64
+            c_compiler: clang-17
+            cpp_compiler: clang++-17
         exclude:
           - os: windows-latest
             c_compiler: gcc
           - os: windows-latest
-            c_compiler: clang-18
+            c_compiler: clang-17
           - os: ubuntu-latest
             c_compiler: cl
+          - os: macos-14-arm64
+            c_compiler: clang-17
 
     steps:
     - uses: actions/checkout@v3
@@ -54,12 +59,12 @@ jobs:
       run: |
         echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
 
-    - name: Install Clang 18 (Ubuntu with Clang)
-      if: matrix.os == 'ubuntu-latest' && matrix.c_compiler == 'clang-18'
+    - name: Install Clang 17 (Ubuntu with Clang)
+      if: matrix.os == 'ubuntu-latest' && matrix.c_compiler == 'clang-17'
       run: |
         wget https://apt.llvm.org/llvm.sh
         chmod u+x ./llvm.sh
-        sudo ./llvm.sh 18
+        sudo ./llvm.sh 17
 
     - name: Install Raylib dependencies (Ubuntu)
       id: install-deps-u
