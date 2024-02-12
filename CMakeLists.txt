@@ -5,4 +5,8 @@ set(CMAKE_CXX_STANDARD 20)
 
 add_subdirectory(demo)
 add_subdirectory(dyn)
-add_subdirectory(tests)
+
+include(CTest)
+if (BUILD_TESTING)
+    add_subdirectory(tests)
+endif ()
