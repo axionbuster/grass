@@ -68,6 +68,10 @@ jobs:
         chmod u+x ./llvm.sh
         sudo ./llvm.sh 17
 
+    - name: Install Clang 17 (macOS)
+      if: matrix.os == 'macos-latest'
+      run: brew install llvm@17
+
     - name: Install Raylib dependencies (Ubuntu)
       id: install-deps-u
       if: matrix.os == 'ubuntu-latest'
