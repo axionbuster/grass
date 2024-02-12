@@ -18,7 +18,25 @@ jobs:
 
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+        c_compiler: [gcc, clang-17, cl, clang]
         build_type: [RelWithDebInfo]
+        exclude:
+          - os: ubuntu-latest
+            c_compiler: cl
+          - os: ubuntu-latest
+            c_compiler: clang
+          - os: windows-latest
+            c_compiler: gcc
+          - os: windows-latest
+            c_compiler: clang-17
+          - os: windows-latest
+            c_compiler: clang
+          - os: macos-latest
+            c_compiler: gcc
+          - os: macos-latest
+            c_compiler: clang-17
+          - os: macos-latest
+            c_compiler: cl
         include:
           - os: ubuntu-latest
             c_compiler: gcc
@@ -61,14 +79,7 @@ jobs:
       if: matrix.os == 'macos-latest'
       run: |
         brew install llvm@17
-
-    - name: On macOS, put clang-17 in PATH
-      if: matrix.os == 'macos-latest'
-      run: |
         echo "/usr/local/opt/llvm/bin" >> "$GITHUB_PATH"
-
-    - name: Print PATH
-      run: |
         echo "$PATH"
         ls /usr/local/opt/llvm/bin
 
