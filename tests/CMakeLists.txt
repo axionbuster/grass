@@ -11,7 +11,8 @@ include(GoogleTest)
 
 # Now simply link against gtest or gtest_main as needed. Eg
 add_executable(units yoshida_test.cpp
-        newton_test.cpp)
+        newton_test.cpp
+        circle_test.cpp)
 target_precompile_headers(units INTERFACE "gtest/gtest.h")
 target_link_libraries(units gtest_main dyn)
 gtest_discover_tests(units)
