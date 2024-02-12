@@ -27,7 +27,7 @@ static int do_main() {
   // Make the mystical figure-8 shape below work at first.
   // (This G value is too large in most cases, so lower it once the user starts
   // interacting with the world.)
-  table.gr.G = 1.0f;
+  table.G = 1.0f;
 
   // Get started with three particles in a figure-8 shape.
   {
@@ -139,7 +139,7 @@ static int do_main() {
       interactive.other_user_manip = true;
 
       // When interactive, lower the gravitational constant.
-      table.gr.G = 0.015625f;
+      table.G = 0.015625f;
 
       // Make sure the mouse is moving quickly (pixels per frame).
       // (Prevent cramping).

@@ -24,14 +24,13 @@ template <typename F = float, unsigned short N_MONTE = 30> class Gravity {
   std::array<std::complex<F>, N_MONTE> disk{};
 
 public:
-  /// @brief Universal gravitational constant.
-  F G{1};
-
   /// @brief Create an instance with a quasi-random internal state.
   constexpr Gravity() { refresh_disk(); }
 
-  /// @brief Compute the acceleration that a test particle represented by the
-  /// circle c0 due to a mass of circle c1 and mass m1.
+  /// @brief Compute the gravitational attraction that a test particle
+  /// represented by the circle c0 due to a mass of circle c1 and mass m1.
+  /// @return A vector quantity of dimensions [M/L/L]. Divide it by the
+  /// universal gravitational constant ("G") to get L/T/T.
   std::complex<F> field(Circle<F> c0, Circle<F> c1, F m1) const noexcept {
     // Use complex arithmetic to translate the coordinate system so that c0
     // appears to be at the origin, but let the respective radii be unaffected.
@@ -42,7 +41,7 @@ public:
          r = std::abs(c1), t = F(1) / r;
     if (s <= r)
       // Disjoint?
-      return t * t * t * m1 * G * c1;
+      return t * t * t * m1 * c1;
     else if (d <= r)
       // Intersecting?
       return when_intersecting(c0.radius, c1, m1);
@@ -82,13 +81,13 @@ public:
   }
 
 private:
-  /// @brief Compute the acceleration that a test particle (center of radius r0)
-  /// at the origin feels due to the presence of source particle (represented by
-  /// the circle c1) with mass m1.
+  /// @brief Compute the gravitational attraction that a test particle (center
+  /// of radius r0) at the origin feels due to the presence of source particle
+  /// (represented by the circle c1) with mass m1.
   /// @param r0 Radius of the test particle (at the origin).
   /// @param c1 Center and radius of source particle.
   /// @param m1 Mass of particle c1.
-  /// @return Acceleration [L/T/T].
+  /// @return Vector quantity of dimensions M/L/L.
   std::complex<F> when_intersecting(F r0, Circle<F> c1, F m1) const noexcept {
     // Assuming uniform mass distribution (by area), divide the test particle's
     // circle into many small pieces. To each particle, apply Newton's shell
@@ -110,7 +109,7 @@ private:
 
     // Converting constexpr integer N_MONTE to floating point constexpr is
     // helpful because it reduces burden due to type conversion on CPU.
-    return F(1) / F(N_MONTE) * m1 * G * B;
+    return F(1) / F(N_MONTE) * m1 * B;
   }
 };
 
