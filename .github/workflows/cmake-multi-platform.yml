@@ -36,12 +36,12 @@ jobs:
             c_compiler: clang-17
             cpp_compiler: clang++-17
           - os: macos-latest
-            c_compiler: clang-17
-            cpp_compiler: clang++-17
+            c_compiler: clang
+            cpp_compiler: clang++
             env:
-              - LDFLAGS: -L$HOMEBREW_PREFIX/opt/llvm/lib/c++ -Wl,-rpath,$HOMEBREW_PREFIX/opt/llvm/lib/c++
-              - CPPFLAGS: -I$HOMEBREW_PREFIX/opt/llvm/include
-              - PATH: $HOMEBREW_PREFIX/opt/llvm/bin:$PATH
+              - LDFLAGS: -L/usr/local/opt/llvm/lib/c++ -Wl,-rpath,$HOMEBREW_PREFIX/opt/llvm/lib/c++
+              - CPPFLAGS: -I/usr/local/opt/llvm/include
+              - PATH: /usr/local/opt/llvm/bin:$PATH
 
     steps:
     - uses: actions/checkout@v3
@@ -62,7 +62,9 @@ jobs:
 
     - name: Install Clang 17 (macOS)
       if: matrix.os == 'macos-latest'
-      run: brew install llvm@17
+      run: |
+        brew install llvm@17
+        echo "$PATH"
 
     - name: Install Raylib dependencies (Ubuntu)
       id: install-deps-u
