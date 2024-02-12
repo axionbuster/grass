@@ -6,13 +6,14 @@
 #include <circle.h>
 #include <kahan.h>
 #include <newton.h>
-#include <yoshida.h>
+// #include <yoshida.h>
+#include <verlet.h>
 
 namespace phy {
 
 struct Particle {
-  /// @brief Kinematic properties (position: y0, velocity: y1).
-  dyn::Yoshida<float> kin;
+  /// @brief Kinematic properties.
+  std::complex<float> xy, v;
 
   /// @brief Mass and radius.
   float mass = 1.0f, radius = 1.0f;
@@ -28,11 +29,11 @@ struct Particle {
   /// @param r Radius, positive.
   constexpr Particle(std::complex<float> xy, std::complex<float> v, float m = 1,
                      float r = 1)
-      : kin{xy, v}, mass{m}, radius{r} {}
+      : xy{xy}, v{v}, mass{m}, radius{r} {}
 
   /// @brief Construct a circle that represents this particle.
   [[nodiscard]] constexpr dyn::Circle<float> circle() const {
-    return {kin.y0, radius};
+    return {xy, radius};
   }
 };
 
@@ -68,7 +69,10 @@ public:
       };
       // step(): Integrate.
       // (Calls accel() above a few times with slightly different xy.)
-      copy[i].kin.step(dt, accel);
+      auto step = dyn::Verlet<>{p.xy, p.v};
+      step.step(dt, accel);
+      auto &q = copy[i];
+      q.xy = step.y0, q.v = step.y1;
     }
     *this = copy;
   }
@@ -79,10 +83,25 @@ public:
     dyn::Kahan<C<>> cm;
     dyn::Kahan<double> m;
     for (auto &&p : *this)
-      cm += double(p.mass) * C<>(p.kin.y0), m += double(p.mass);
+      cm += double(p.mass) * C<>(p.xy), m += double(p.mass);
     auto c = C<float>(cm() / m());
     for (auto &&p : *this)
-      p.kin.y0 -= c;
+      p.xy -= c;
+  }
+
+  /// @brief Refresh the "disk" used for parts of the calculation.
+  void refresh_disk() noexcept { gr.refresh_disk(); }
+
+  /// @brief Test whether the simulation is in "good state."
+  bool good() noexcept {
+    auto constexpr goodf = [](float f) { return std::isfinite(f); };
+    auto constexpr goodc = [](std::complex<float> f) {
+      return std::isfinite(f.real()) && std::isfinite(f.imag());
+    };
+    for (auto &&p : *this)
+      if (!goodc(p.xy) || !goodc(p.v))
+        return false;
+    return true;
   }
 };
 

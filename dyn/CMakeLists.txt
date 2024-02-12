@@ -5,5 +5,6 @@ add_library(dyn INTERFACE
         kahan.h
         halton.h
         newton.h
-        circle.h)
+        circle.h
+        verlet.h)
 target_include_directories(dyn INTERFACE .)

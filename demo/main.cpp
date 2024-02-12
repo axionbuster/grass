@@ -1,7 +1,6 @@
 #include <raylib.h>
 
 #include <algorithm>
-#include <cfenv>
 #include <cmath>
 #include <complex>
 #include <sstream>
@@ -19,7 +18,7 @@ static int do_main() {
   auto constexpr RADIUS = 0.05f;
   auto constexpr MASS = 1.0f;
   auto constexpr too_far = [](Particle &p) {
-    return std::abs(p.kin.y0) > 5'000.0f;
+    return std::abs(p.xy) > 5'000.0f;
   };
 
   // Quasi-random number generator.
@@ -183,7 +182,7 @@ static int do_main() {
       auto o = std::complex<float>(n.x, n.y);
       auto p = random_particle();
       // Set location
-      p.kin.y0 = o;
+      p.xy = o;
       table.push_back(p);
 
       interactive.spawned_last_frame = true;
@@ -195,19 +194,18 @@ static int do_main() {
     }
 
   simulate:
-    // Clear floating point exceptions.
-    std::feclearexcept(FE_ALL_EXCEPT);
-
     // Do the simulation!
     if (!interactive.freeze)
       table.step(dt);
 
+    // table.refresh_disk();
+
     // Don't be moving the particles while it's being manipulated.
-    if (!interactive.spawned_last_frame && !interactive.other_user_manip)
-      table.center();
+    // if (!interactive.spawned_last_frame && !interactive.other_user_manip)
+      // table.center();
 
     // Inspect floating point exceptions.
-    if (std::fetestexcept(FE_DIVBYZERO | FE_INVALID))
+    if (!table.good())
       // NaN or infinity somewhere. Reset the simulation.
       goto reset_sim;
 
