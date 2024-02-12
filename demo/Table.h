@@ -39,9 +39,12 @@ struct Particle {
 class Table : public std::vector<Particle> {
   template <typename F = double> using C = std::complex<F>;
 
-public:
-  /// @brief Gravitational interaction with parameters.
+  /// @brief Gravitational interaction.
   dyn::Gravity<> gr;
+
+public:
+  /// @brief Universal gravitational constant [LLL/M/T/T]. Modify freely.
+  float G{1.0f};
 
   /// @brief Perform an integration step.
   /// @param dt Step size [units: T].
@@ -58,7 +61,7 @@ public:
         for (auto &&q : *this) {
           if (&p != &q) {
             dyn::Circle<float> cp{xy, p.radius}, cq = q.circle();
-            a += gr.field(cp, cq, q.mass);
+            a += gr.field(cp, cq, G * q.mass);
           }
         }
         return a();
