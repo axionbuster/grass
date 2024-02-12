@@ -34,8 +34,8 @@ jobs:
             c_compiler: gcc
             cpp_compiler: g++
           - os: ubuntu-latest
-            c_compiler: clang
-            cpp_compiler: clang++
+            c_compiler: clang-18
+            cpp_compiler: clang++-18
         exclude:
           - os: windows-latest
             c_compiler: gcc
@@ -55,7 +55,7 @@ jobs:
         echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
 
     - name: Install Clang 18 (Ubuntu with Clang)
-      if: matrix.os == 'ubuntu-latest' && matrix.cpp_compiler == 'clang++'
+      if: matrix.os == 'ubuntu-latest' && matrix.cpp_compiler == 'clang++-18'
       run: |
         wget https://apt.llvm.org/llvm.sh
         chmod u+x ./llvm.sh
