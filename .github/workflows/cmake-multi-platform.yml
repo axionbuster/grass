@@ -37,8 +37,8 @@ jobs:
           #   c_compiler: clang-17
           #   cpp_compiler: clang++-17
           - os: macos-latest
-            c_compiler: clang-17
-            cpp_compiler: clang++-17
+            c_compiler: clang
+            cpp_compiler: clang++
 
     steps:
     - uses: actions/checkout@v3
@@ -75,7 +75,9 @@ jobs:
         echo "/usr/local/opt/llvm/bin" >> "$GITHUB_PATH"
 
     - name: Print PATH
-      run: echo "$PATH"
+      run: |
+        echo "$PATH"
+        ls /usr/local/opt/llvm/bin
 
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
