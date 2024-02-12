@@ -7,7 +7,10 @@
 #include <sstream>
 #include <vector>
 
+#include <halton.h>
+
 #include "Table.h"
+#include "irhall.h"
 
 using namespace phy;
 
@@ -17,6 +20,26 @@ static int do_main() {
   auto constexpr MASS = 1.0f;
   auto constexpr too_far = [](Particle &p) {
     return std::abs(p.kin.y0) > 5'000.0f;
+  };
+
+  // Quasi-random number generator.
+  // - Quality not so important.
+  // - Possibly reduce binary size by reusing code.
+  // - Possibly help with instruction cache by having simple code.
+  // - Definitely small state (1 short int vs. compared to, say, mt19937).
+  dyn::Halton qrng;
+  auto normal_variate = [&qrng]() {
+    auto &q = qrng;
+    // Approximate normal distribution using uniform random variates.
+    return phy::irhnormal([&q]() { return q.x01(); });
+  };
+  // Make a particle at rest at the origin with a random mass and radius.
+  auto random_particle = [&normal_variate]() {
+    // Random mass and radius, but not other properties.
+    auto mass = std::exp(normal_variate());
+    auto radius = std::exp(2.0f * normal_variate() - 3.0f);
+    // xy, v, m, r.
+    return Particle{{0}, {0}, mass, radius};
   };
 
   InitWindow(600, 600, "Basic 1,000 particle demo (click to add particles)");
@@ -158,8 +181,10 @@ static int do_main() {
       auto m = GetMousePosition();
       auto n = GetScreenToWorld2D(m, cam);
       auto o = std::complex<float>(n.x, n.y);
-      // Position, velocity, mass, radius
-      table.emplace_back(o, 0.0f, MASS, RADIUS);
+      auto p = random_particle();
+      // Set location
+      p.kin.y0 = o;
+      table.push_back(p);
 
       interactive.spawned_last_frame = true;
     } else {

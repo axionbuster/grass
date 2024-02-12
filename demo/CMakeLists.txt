@@ -30,7 +30,8 @@ endif ()
 set(CMAKE_WIN32_EXECUTABLE TRUE)
 
 add_executable(grass main.cpp
-        Table.h)
+        Table.h
+        irhall.h)
 
 target_link_libraries(grass raylib)
 target_link_libraries(grass dyn)
