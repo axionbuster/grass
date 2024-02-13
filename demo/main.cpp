@@ -1,12 +1,12 @@
 #include <raylib.h>
 
 #include <algorithm>
-#include <cfenv>
 #include <cmath>
 #include <complex>
 #include <sstream>
 #include <vector>
 
+#include <circle.h>
 #include <halton.h>
 
 #include "Table.h"
@@ -19,7 +19,7 @@ static int do_main() {
   auto constexpr RADIUS = 0.05f;
   auto constexpr MASS = 1.0f;
   auto constexpr too_far = [](Particle &p) {
-    return std::abs(p.kin.y0) > 5'000.0f;
+    return std::abs(p.xy) > 5'000.0f;
   };
 
   // Quasi-random number generator.
@@ -183,7 +183,7 @@ static int do_main() {
       auto o = std::complex<float>(n.x, n.y);
       auto p = random_particle();
       // Set location
-      p.kin.y0 = o;
+      p.xy = o;
       table.push_back(p);
 
       interactive.spawned_last_frame = true;
@@ -195,19 +195,18 @@ static int do_main() {
     }
 
   simulate:
-    // Clear floating point exceptions.
-    std::feclearexcept(FE_ALL_EXCEPT);
-
     // Do the simulation!
     if (!interactive.freeze)
       table.step(dt);
 
+    table.refresh_disk();
+
     // Don't be moving the particles while it's being manipulated.
-    if (!interactive.spawned_last_frame && !interactive.other_user_manip)
-      table.center();
+    // if (!interactive.spawned_last_frame && !interactive.other_user_manip)
+    // table.center();
 
     // Inspect floating point exceptions.
-    if (std::fetestexcept(FE_DIVBYZERO | FE_INVALID))
+    if (!table.good())
       // NaN or infinity somewhere. Reset the simulation.
       goto reset_sim;
 
@@ -216,16 +215,21 @@ static int do_main() {
 
     // Draw all particles in the frame.
     BeginMode2D(cam);
-    for (auto &&p : table) {
-      auto cp = p.circle();
-      Vector2 xy{cp.real(), cp.imag()};
-      // Should I issue the draw call or not? Tell it here:
-      // co stores screen dimensions calculated earlier.
-      auto co = cam.offset;
-      // x, y, width, then height.
-      Rectangle screen{-co.x / 2, -co.y / 2, co.x, co.y};
-      if (CheckCollisionCircleRec(xy, cp.radius, screen))
-        DrawCircleV(xy, cp.radius, WHITE);
+    {
+      // Compute the screen's less-less (ll) and greater-greater (gg) corners in
+      // the world coordinate system so that draw calls would only be issued for
+      // certainly visible particles.
+      std::complex<float> scwh{float(GetScreenWidth()),
+                               float(GetScreenHeight())};
+      std::complex<float> scof{cam.offset.x, cam.offset.y};
+      auto scsc = (scwh - scof) / cam.zoom;
+      std::complex<float> sctg{cam.target.x, cam.target.y};
+      auto ll = sctg - scof / cam.zoom, gg = sctg + scsc;
+      for (auto &&p : table) {
+        auto cp = p.circle();
+        if (dyn::disk_arrect_isct(cp, ll, gg))
+          DrawCircleV({cp.real(), cp.imag()}, cp.radius, WHITE);
+      }
     }
     EndMode2D();
 

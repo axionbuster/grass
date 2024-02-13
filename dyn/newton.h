@@ -23,6 +23,14 @@ template <typename F = float, unsigned short N_MONTE = 30> class Gravity {
   /// for Monte Carlo integration in the case of overlapping circles.
   std::array<std::complex<F>, N_MONTE> disk{};
 
+  // Each Halton sequence (a kind of low-discrepancy sequence) creates an
+  // evenly spaced set of points on the unit interval (0, 1); unlike the
+  // uniform distribution, however, the points look "uniformly distributed"
+  // (number of points being mostly proportional to length of any subset)
+  // even for a finite sample of points.
+  Halton<F, 2> h2;
+  Halton<F, 3> h3;
+
 public:
   /// @brief Create an instance with a quasi-random internal state.
   constexpr Gravity() { refresh_disk(); }
@@ -54,14 +62,6 @@ public:
   /// case of intersecting circles) with new evenly distributed points on the
   /// unit disk centered about the origin. Call time to time.
   constexpr void refresh_disk() {
-    // Each Halton sequence (a kind of low-discrepancy sequence) creates an
-    // evenly spaced set of points on the unit interval (0, 1); unlike the
-    // uniform distribution, however, the points look "uniformly distributed"
-    // (number of points being mostly proportional to length of any subset)
-    // even for a finite sample of points.
-    Halton<F, 2> h2;
-    Halton<F, 3> h3;
-
     // Fill `disk` with random points on unit disk centered about origin
     // by rejection sampling.
     for (auto &&p : disk) {
