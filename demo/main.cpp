@@ -235,7 +235,7 @@ static int do_main() {
       std::complex<float> sctg{cam.target.x, cam.target.y};
       scof /= cam.zoom;
       auto scsc = scwh / cam.zoom - scof;
-      auto ll = sctg - scof, gg = sctg + scsc;
+      auto ll = sctg - scsc, gg = sctg + scsc;
       for (auto &&p : table) {
         auto cp = p.circle();
         if (dyn::disk_arrect_isct(cp, ll, gg))
