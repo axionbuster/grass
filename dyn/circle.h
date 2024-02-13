@@ -42,21 +42,25 @@ bool origin_disk_arrect_isct(F radius, std::complex<F> const &ll,
            -radius < gg.imag();
   };
 
-  // The rectangle is not touching the bounding square of the circle.
-  if (!arrec_arsq_isct(radius))
-    return false;
-
   // The rectangle is touching the interior square of the circle.
   if (arrec_arsq_isct(radius * sc45))
     return true;
 
+  // The rectangle is not touching the bounding square of the circle.
+  if (!arrec_arsq_isct(radius))
+    return false;
+
   // At least one of the four corners of the given rectangle is in the disk.
-  F cc[4] = {std::abs(ll), std::abs(gg),
-             std::abs(std::complex<F>{ll.real(), gg.imag()}),
-             std::abs(std::complex<F>{gg.real(), ll.imag()})};
-  for (auto &&c : cc)
-    if (c < radius)
-      return true;
+  // (Usually less than 1% of the cases even reach here in the demo as of
+  // writing.)
+  if (std::abs(ll) < radius)
+    return true;
+  if (std::abs(gg) < radius)
+    return true;
+  if (std::abs(std::complex<F>{ll.real(), gg.imag()}) < radius)
+    return true;
+  if (std::abs(std::complex<F>{gg.real(), ll.imag()}) < radius)
+    return true;
 
   // They aren't touching.
   return false;

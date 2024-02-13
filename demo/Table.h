@@ -74,9 +74,10 @@ public:
       // accel:
       // Supposing that particle p is located instead at the position xy below,
       // what is the acceleration experienced by p due to all the other
-      // particles?
+      // particles (q)?
       auto accel = [&](auto xy) {
         dyn::Kahan<std::complex<float>> a;
+        // NOTE: the nested loop begins here.
         for (auto &&q : *this) {
           if (&p != &q) {
             dyn::Circle<float> cp{xy, p.radius}, cq = q.circle();
@@ -95,28 +96,16 @@ public:
     *this = copy;
   }
 
-  void center() noexcept {
-    // Use double precision for the dynamic range.
-    dyn::Kahan<C<>> cm;
-    dyn::Kahan<double> m;
-    for (auto &&p : *this)
-      cm += double(p.mass) * C<>(p.xy), m += double(p.mass);
-    auto c = C<float>(cm() / m());
-    for (auto &&p : *this)
-      p.xy -= c;
-  }
-
   /// @brief Refresh the "disk" used for parts of the calculation.
   void refresh_disk() noexcept { gr.refresh_disk(); }
 
   /// @brief Test whether the simulation is in "good state."
   bool good() noexcept {
-    auto constexpr goodf = [](float f) { return std::isfinite(f); };
-    auto constexpr goodc = [](std::complex<float> f) {
+    auto constexpr finite = [](std::complex<float> f) {
       return std::isfinite(f.real()) && std::isfinite(f.imag());
     };
     for (auto &&p : *this)
-      if (!goodc(p.xy) || !goodc(p.v))
+      if (!finite(p.xy) || !finite(p.v))
         return false;
     return true;
   }

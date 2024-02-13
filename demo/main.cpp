@@ -22,11 +22,12 @@ static int do_main() {
     return std::abs(p.xy) > 5'000.0f;
   };
 
-  // Quasi-random number generator.
+  // Quasi-random number generator; uniform distribution on (0, 1).
   // - Quality not so important.
-  // - Possibly reduce binary size by reusing code.
-  // - Possibly help with instruction cache by having simple code.
-  // - Definitely small state (1 short int vs. compared to, say, mt19937).
+  // - Small state (only a single short int).
+  // - Simple code (a single loop).
+  // - Code is used in other places; possibility of inlining (as the compiler
+  // judges is appropriate).
   dyn::Halton qrng;
   auto normal_variate = [&qrng]() {
     auto &q = qrng;
@@ -36,8 +37,8 @@ static int do_main() {
   // Make a particle at rest at the origin with a random mass and radius.
   auto random_particle = [&normal_variate]() {
     // Random mass and radius, but not other properties.
-    auto mass = std::exp(normal_variate());
-    auto radius = std::exp(2.0f * normal_variate() - 3.0f);
+    auto mass = MASS * std::exp(normal_variate());
+    auto radius = RADIUS * std::exp(2.0f * normal_variate());
     // xy, v, m, r.
     return Particle{{0}, {0}, mass, radius};
   };
@@ -47,34 +48,39 @@ static int do_main() {
   // The physical table (store particles, etc.); backup.
   Table table, table0;
 
-  // Make the mystical figure-8 shape below work at first.
-  // (This G value is too large in most cases, so lower it once the user starts
-  // interacting with the world.)
-  table.G = 1.0f;
-
-  // Get started with three particles in a figure-8 shape.
+  // In demo mode (default), show three particles in a figure-8 shape.
   {
-    // Position, velocity.
-    std::complex<float> _c0{-0.97000436f, 0.24308753f},
-        _v0{0.4662036850f, 0.4323657300f}, _v1{-0.93240737f, -0.86473146f};
+    // Make the mystical figure-8 shape below work at first.
+    // (This G value is too large in most cases, so I will lower it once the
+    // user starts interacting with the world, exiting the demo mode.)
+    table.G = 1.0f;
+
+    // Positions (c...), and velocities (v...)
+    std::complex<float> c0{-0.97000436f, 0.24308753f},
+        v0{0.4662036850f, 0.4323657300f}, v1{-0.93240737f, -0.86473146f};
 
     // Position, velocity, mass, radius
-    table.emplace_back(_c0, _v0, MASS, RADIUS);
-    table.emplace_back(0.0f, _v1, MASS, RADIUS);
-    table.emplace_back(-_c0, _v0, MASS, RADIUS);
+    table.emplace_back(c0, v0, MASS, RADIUS);
+    table.emplace_back(0.0f, v1, MASS, RADIUS);
+    table.emplace_back(-c0, v0, MASS, RADIUS);
   }
 
   // Initial version of the table (backup).
   table0 = table;
 
-  // Information to show or not.
+  // Flag for information to show.
   struct {
+    // Show FPS.
     bool fps : 1 {};
+    // Show the number of particles.
     bool n_particles : 1 {};
+    // Show debug information about the camera.
     bool cam : 1 {};
+    // Decide whether any flag is set.
     [[nodiscard]] constexpr bool any() const {
       return fps || n_particles || cam;
     }
+    // Rotate to the next option.
     constexpr void next() {
       if (!fps)
         fps = n_particles = cam = true;
@@ -85,13 +91,19 @@ static int do_main() {
     }
   } show;
 
-  // If set, then the user intends to interact.
+  // Interactive variables and flags.
+  // (By itself, it returns whether the simulation is in interactive mode
+  // [true] or demo mode [false]).
   struct {
+    // If set, then the user intends to interact.
     bool on : 1 {};
+    // If set, skip spawning in this frame when user asks to spawn a particle.
     bool spawned_last_frame : 1 {};
-    bool other_user_manip : 1 {};
+    // Do not advance the simulation in this frame.
     bool freeze : 1 {};
+    // Target FPS.
     unsigned short target_fps{90};
+    // Last time the simulation began or reset, seconds.
     double last_sec{GetTime()};
     constexpr explicit operator bool() const { return on; }
     [[nodiscard]] constexpr float target_dt() const {
@@ -101,12 +113,15 @@ static int do_main() {
 
   SetTargetFPS(interactive.target_fps);
   Camera2D cam{}, cam0{};
-  cam.zoom = 100.0f;
+  cam.zoom = 100.0f; // [L] / [px] where L = world length unit; px = pixels.
   cam.offset = {float(GetScreenWidth()) / 2.0f,
                 float(GetScreenHeight()) / 2.0f};
   cam0 = cam;
 
   while (!WindowShouldClose()) {
+    // Apply variable time.
+    // FIXME: The integrators Yoshida and Verlet currently do not support
+    //  variable time; numerical errors may occur (but not programming errors).
     float dt = interactive ? GetFrameTime() : interactive.target_dt();
 
     // Reset the simulation (R) if asked.
@@ -138,8 +153,11 @@ static int do_main() {
       cam.target = y;
     }
 
-    // Zoom with the wheel.
-    if (float wheel = GetMouseWheelMove()) {
+    // Zoom with the wheel if given.
+    // dwheel: usually -1.0f or 1.0f with computer mouse [but may be different].
+    if (auto dwheel = GetMouseWheelMove()) {
+      // dwheel != 0
+
       auto u = GetMousePosition();
       auto v = GetScreenToWorld2D(u, cam);
 
@@ -147,7 +165,7 @@ static int do_main() {
       cam.target = v;
 
       auto constexpr ZOOM_INCR = 10.0f;
-      cam.zoom += wheel * ZOOM_INCR;
+      cam.zoom += dwheel * ZOOM_INCR;
       cam.zoom = std::max(cam.zoom, ZOOM_INCR);
       cam.zoom = std::min(cam.zoom, 20 * ZOOM_INCR);
     }
@@ -157,9 +175,6 @@ static int do_main() {
     if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
       // Set interactive.
       interactive.on = true;
-
-      // The user is manipulating it right now.
-      interactive.other_user_manip = true;
 
       // When interactive, lower the gravitational constant.
       table.G = 0.015625f;
@@ -189,26 +204,21 @@ static int do_main() {
       interactive.spawned_last_frame = true;
     } else {
       interactive.spawned_last_frame = false;
-
-      // The user has stopped manipulating.
-      interactive.other_user_manip = false;
     }
 
   simulate:
     // Do the simulation!
-    if (!interactive.freeze)
+    if (!interactive.freeze) {
       table.step(dt);
+      // Remove statistical bias in collision handling routine.
+      // (See refresh_disk()'s comments for details.)
+      table.refresh_disk();
 
-    table.refresh_disk();
-
-    // Don't be moving the particles while it's being manipulated.
-    // if (!interactive.spawned_last_frame && !interactive.other_user_manip)
-    // table.center();
-
-    // Inspect floating point exceptions.
-    if (!table.good())
-      // NaN or infinity somewhere. Reset the simulation.
-      goto reset_sim;
+      // Inspect for such things as NaN and Infinity.
+      if (!table.good())
+        // NaN or infinity somewhere. Reset the simulation.
+        goto reset_sim;
+    }
 
     BeginDrawing();
     ClearBackground(BLACK);
@@ -222,12 +232,15 @@ static int do_main() {
       std::complex<float> scwh{float(GetScreenWidth()),
                                float(GetScreenHeight())};
       std::complex<float> scof{cam.offset.x, cam.offset.y};
-      auto scsc = (scwh - scof) / cam.zoom;
       std::complex<float> sctg{cam.target.x, cam.target.y};
-      auto ll = sctg - scof / cam.zoom, gg = sctg + scsc;
+      scof /= cam.zoom;
+      auto scsc = scwh / cam.zoom - scof;
+      auto ll = sctg - scof, gg = sctg + scsc;
       for (auto &&p : table) {
         auto cp = p.circle();
         if (dyn::disk_arrect_isct(cp, ll, gg))
+          // Yes, the particle (p) is certainly overlapping with the
+          // rectangle with the corners ll and gg; draw it.
           DrawCircleV({cp.real(), cp.imag()}, cp.radius, WHITE);
       }
     }
@@ -235,6 +248,8 @@ static int do_main() {
 
     // Compose text and show it.
     {
+      // The standard library understands how to format a complex number, but,
+      // understandably, knows nothing about Raylib's custom vector types.
       auto constexpr v2c = [](Vector2 v) {
         return std::complex<float>{v.x, v.y};
       };

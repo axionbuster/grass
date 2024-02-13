@@ -96,8 +96,18 @@ In kahan.h (Kahan class):
   Kahan's summation is fast but presumably not vectorizable and requires subnormal numbers to exist. Hence, I recommend
   that compensated summation be used immediately outside the "hot inner loops" unless numerical analysis says otherwise.
 
-Other files:
+Integrators:
+
+Both integrators are symplectic (area-preserving; this mostly means energy-preserving), a feature necessary for the
+statistical accuracy of the simulation.
+
+- yoshida.h (Yoshida class)
+- verlet.h (Verlet class)
+
+Others:
 
 - circle.h (Circle class)
+    - Collision detection between the area inside a circle (disk) and the area inside a rectangle. (Vulnerable to
+      degeneracies).
 - halton.h (Halton class)
-- yoshida.h (Yoshida class)
+    - Quasi-random number generator on the interval (0, 1) with a uniform random distribution.
