@@ -8,7 +8,6 @@
 
 #include <circle.h>
 #include <halton.h>
-#include <verlet.h>
 
 #include "Table.h"
 #include "irhall.h"
@@ -46,7 +45,7 @@ static int do_main() {
   InitWindow(600, 600, "Basic 1,000 particle demo (click to add particles)");
 
   // The physical table (store particles, etc.); backup.
-  Table<dyn::Verlet<float>> table, table0;
+  Table table, table0;
 
   // Make the mystical figure-8 shape below work at first.
   // (This G value is too large in most cases, so lower it once the user starts
