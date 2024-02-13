@@ -6,8 +6,8 @@
 #include <circle.h>
 #include <kahan.h>
 #include <newton.h>
-// #include <yoshida.h>
 #include <verlet.h>
+#include <yoshida.h>
 
 namespace phy {
 
@@ -69,7 +69,7 @@ public:
       };
       // step(): Integrate.
       // (Calls accel() above a few times with slightly different xy.)
-      auto step = dyn::Verlet<>{p.xy, p.v};
+      auto step = dyn::Yoshida<>{p.xy, p.v};
       step.step(dt, accel);
       auto &q = copy[i];
       q.xy = step.y0, q.v = step.y1;
