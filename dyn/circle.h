@@ -34,11 +34,6 @@ bool origin_disk_arrect_isct(F radius, std::complex<F> ll,
   // sin(45 deg) [also cos(45 deg)].
   constexpr auto sc45 = std::numbers::sqrt2_v<F> / F(2);
 
-  // The rectangle's four corners are in four different quadrants.
-  if (std::signbit(ll.real()) != std::signbit(gg.real()) &&
-      std::signbit(ll.imag()) != std::signbit(gg.imag()))
-    return true;
-
   // Decide whether the given rectangle and a square centered at (0,0) having a
   // "radius" (half side length) of `radius` (thus a full side length of twice
   // the `radius`).
@@ -63,7 +58,7 @@ bool origin_disk_arrect_isct(F radius, std::complex<F> ll,
     if (c < radius)
       return true;
 
-  // They don't touch.
+  // They aren't touching.
   return false;
 }
 
