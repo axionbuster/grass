@@ -29,8 +29,8 @@ template <typename F = float> struct Circle : public std::complex<F> {
 /// @param ll The less-less corner of the rectangle.
 /// @param gg The greater-greater corner of the rectangle.
 template <typename F = float>
-bool origin_disk_arrect_isct(F radius, std::complex<F> ll,
-                             std::complex<F> gg) noexcept {
+bool origin_disk_arrect_isct(F radius, std::complex<F> const &ll,
+                             std::complex<F> const &gg) noexcept {
   // sin(45 deg) [also cos(45 deg)].
   constexpr auto sc45 = std::numbers::sqrt2_v<F> / F(2);
 
@@ -42,11 +42,11 @@ bool origin_disk_arrect_isct(F radius, std::complex<F> ll,
            -radius < gg.imag();
   };
 
-  // The rectangle does not touch the bounding square of the circle.
+  // The rectangle is not touching the bounding square of the circle.
   if (!arrec_arsq_isct(radius))
     return false;
 
-  // The rectangle touches the interior square of the circle.
+  // The rectangle is touching the interior square of the circle.
   if (arrec_arsq_isct(radius * sc45))
     return true;
 
@@ -68,6 +68,7 @@ bool origin_disk_arrect_isct(F radius, std::complex<F> ll,
 template <typename F = float>
 bool disk_arrect_isct(Circle<F> circ, std::complex<F> ll,
                       std::complex<F> gg) noexcept {
+  // Translate the coordinate system so that the circle is at the origin.
   ll -= circ, gg -= circ;
   return origin_disk_arrect_isct(circ.radius, ll, gg);
 }

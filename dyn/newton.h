@@ -48,19 +48,21 @@ public:
     auto s = c1.radius + c0.radius, d = std::abs(c1.radius - c0.radius),
          r = std::abs(c1), t = F(1) / r;
     if (s <= r)
-      // Disjoint?
+      // Disjoint? Use the usual law, treating these circles as point
+      // particles whose masses are concentrated at the given centers.
       return t * t * t * m1 * c1;
     else if (d <= r)
       // Intersecting?
       return when_intersecting(c0.radius, c1, m1);
     else
-      // Or, does one circle fully contain the other?
+      // Or, does one circle fully contain the other? Then, apply the shell
+      // theorem to get a net force of zero.
       return F(0);
   }
 
   /// @brief Populate internal random disk (used for calculating forces in the
   /// case of intersecting circles) with new evenly distributed points on the
-  /// unit disk centered about the origin. Call time to time.
+  /// unit disk centered about the origin. Call often to avoid bias.
   constexpr void refresh_disk() {
     // Fill `disk` with random points on unit disk centered about origin
     // by rejection sampling.
@@ -102,8 +104,7 @@ private:
       auto r = std::abs(q);
       if (r > c1.radius) {
         auto s = F(1) / r;
-        auto dB = s * s * s * (c1 - r0 * p);
-        B += dB;
+        B += s * s * s * q;
       }
     }
 
