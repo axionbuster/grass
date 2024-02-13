@@ -37,6 +37,24 @@ struct Particle {
   }
 };
 
+/// @brief A type of integrator accepted by Table.
+template <typename I, typename F>
+concept IntegratorType = requires(I i, std::complex<F> c) {
+  { I{c, c} } -> std::convertible_to<I>;
+  { i.y0 } -> std::convertible_to<std::complex<F>>;
+  { i.y1 } -> std::convertible_to<std::complex<F>>;
+  // Also, with a function f of type std::complex<F> -> std::complex<F>,
+  // and an F type value h,
+  // possible to advance internal state with the syntax:
+  //    i.step(h, f);
+  // [h ostensibly stands for "step size," F for "floating point,"
+  // and f computes the second derivative from the zeroth derivative.]
+};
+
+/// @brief Store a vector of particles and integrate them using the provided
+/// integrator type.
+template <typename Integrator = dyn::Yoshida<float>>
+requires IntegratorType<Integrator, float>
 class Table : public std::vector<Particle> {
   template <typename F = double> using C = std::complex<F>;
 
@@ -69,7 +87,7 @@ public:
       };
       // step(): Integrate.
       // (Calls accel() above a few times with slightly different xy.)
-      auto step = dyn::Yoshida<>{p.xy, p.v};
+      auto step = Integrator{p.xy, p.v};
       step.step(dt, accel);
       auto &q = copy[i];
       q.xy = step.y0, q.v = step.y1;
@@ -77,7 +95,6 @@ public:
     *this = copy;
   }
 
-  /// @brief Translate all particles so that the center of mass is at (0, 0).
   void center() noexcept {
     // Use double precision for the dynamic range.
     dyn::Kahan<C<>> cm;
