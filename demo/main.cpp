@@ -199,7 +199,7 @@ static int do_main() {
     if (!interactive.freeze)
       table.step(dt);
 
-    // table.refresh_disk();
+    table.refresh_disk();
 
     // Don't be moving the particles while it's being manipulated.
     // if (!interactive.spawned_last_frame && !interactive.other_user_manip)
