@@ -221,9 +221,10 @@ static int do_main() {
       // certainly visible particles.
       std::complex<float> scwh{float(GetScreenWidth()),
                                float(GetScreenHeight())};
+      std::complex<float> scof{cam.offset.x, cam.offset.y};
+      auto scsc = (scwh - scof) / cam.zoom;
       std::complex<float> sctg{cam.target.x, cam.target.y};
-      scwh /= cam.zoom;
-      auto ll = sctg - 0.5f * scwh, gg = sctg + 0.5f * scwh;
+      auto ll = sctg - scof / cam.zoom, gg = sctg + scsc;
       for (auto &&p : table) {
         auto cp = p.circle();
         if (dyn::disk_arrect_isct(cp, ll, gg))
