@@ -113,7 +113,7 @@ static int do_main() {
 
   SetTargetFPS(interactive.target_fps);
   Camera2D cam{}, cam0{};
-  cam.zoom = 100.0f; // [L] / [px] where L = world length unit; px = pixels.
+  cam.zoom = 100.0f; // [px] / [L] where L = world length unit; px = pixels.
   cam.offset = {float(GetScreenWidth()) / 2.0f,
                 float(GetScreenHeight()) / 2.0f};
   cam0 = cam;
@@ -124,7 +124,7 @@ static int do_main() {
     //  variable time; numerical errors may occur (but not programming errors).
     float dt = interactive ? GetFrameTime() : interactive.target_dt();
 
-    // Reset the simulation (R) if asked.
+    // Reset the simulation (R).
     if (IsKeyPressed(KEY_R))
       goto reset_sim;
 
@@ -167,7 +167,7 @@ static int do_main() {
       auto constexpr ZOOM_INCR = 10.0f;
       cam.zoom += dwheel * ZOOM_INCR;
       cam.zoom = std::max(cam.zoom, ZOOM_INCR);
-      cam.zoom = std::min(cam.zoom, 20 * ZOOM_INCR);
+      cam.zoom = std::min(cam.zoom, 20.0f * ZOOM_INCR);
     }
 
     // Spawn particles when asked.
@@ -181,7 +181,7 @@ static int do_main() {
 
       // Make sure the mouse is moving quickly (pixels per frame).
       // (Prevent cramping).
-      auto constexpr FAST_ENOUGH = 4.0;
+      auto constexpr FAST_ENOUGH = 4.0f;
       auto delta = GetMouseDelta();
       if (interactive.spawned_last_frame &&
           std::hypot(delta.x, delta.y) < FAST_ENOUGH) {
