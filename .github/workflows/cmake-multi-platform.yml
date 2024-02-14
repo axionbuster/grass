@@ -138,8 +138,9 @@ jobs:
           pwd
           ls
           ctest --build-config ${{ matrix.build_type }}
-          llvm-profdata-17 merge -sparse default.profraw -o my_profile
+          llvm-profdata-17 merge -sparse tests/default.profraw -o my_profile
           llvm-cov-17 show -instr-profile my_profile tests/units > coverage.txt
+          ls
 
       - name: Upload coverage reports to Codecov
         if: matrix.cxx_flags != ''
