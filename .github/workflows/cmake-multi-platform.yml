@@ -39,8 +39,8 @@ jobs:
           - os: ubuntu-latest
             c_compiler: clang-17
             cpp_compiler: clang++-17
-            cxx_flags: -fcoverage-mapping -fprofile-instr-generate
-            c_flags: -fcoverage-mapping -fprofile-instr-generate
+            cxx_flags: --coverage
+            c_flags: --coverage
           - os: ubuntu-latest
             c_compiler: icx
             cpp_compiler: icpx
@@ -123,21 +123,11 @@ jobs:
         run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }}
 
       - name: Test
-        if: matrix.cxx_flags == ''
         working-directory: ${{ steps.strings.outputs.build-output-dir }}
         # Execute tests defined by the CMake configuration. Note that --build-config is needed because the default
         # Windows generator is a multi-config generator (Visual Studio generator).
         # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
         run: ctest --build-config ${{ matrix.build_type }}
-
-      - name: Test (Coverage)
-        if: matrix.cxx_flags != ''
-        working-directory: ${{ steps.strings.outputs.build-output-dir }}
-        # In the third line, `tests/units` is the name of the test runner binary.
-        run: |
-          ctest --build-config ${{ matrix.build_type }}
-          llvm-profdata-17 merge tests/default.profraw -o my_profile
-          llvm-cov-17 show -instr-profile my_profile tests/units > coverage.txt
 
       - name: Upload coverage reports to Codecov
         if: matrix.cxx_flags != ''
