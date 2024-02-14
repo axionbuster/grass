@@ -131,6 +131,8 @@ jobs:
           ctest --build-config ${{ matrix.build_type }}
           pwd
           ls -lA
+          sudo apt-get install tree
+          tree tests
 
       - name: Upload coverage reports to Codecov
         if: matrix.cxx_flags != ''
