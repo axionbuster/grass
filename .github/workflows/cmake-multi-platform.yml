@@ -144,7 +144,7 @@ jobs:
 
       - name: Upload coverage reports to Codecov
         if: matrix.cxx_flags != ''
-        uses: codecov/codecov-action@v4.0.1
+        uses: codecov/codecov-action@v3
         env:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: axionbuster/grass
