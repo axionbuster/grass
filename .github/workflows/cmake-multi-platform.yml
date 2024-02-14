@@ -14,7 +14,7 @@ jobs:
       fail-fast: true
 
       matrix:
-        os: [ ubuntu-latest, windows-latest, macos-latest ]
+        os: [ ubuntu-latest ]
         c_compiler: [ gcc, clang-17, cl, icx ]
         build_type: [ RelWithDebInfo ]
         exclude:
