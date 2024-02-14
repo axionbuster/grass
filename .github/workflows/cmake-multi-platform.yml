@@ -39,6 +39,8 @@ jobs:
           - os: ubuntu-latest
             c_compiler: clang-17
             cpp_compiler: clang++-17
+            cxx_flags: -fcoverage-mapping -fprofile-instr-generate
+            c_flags: -fcoverage-mapping -fprofile-instr-generate
           - os: ubuntu-latest
             c_compiler: icx
             cpp_compiler: icpx
@@ -96,14 +98,23 @@ jobs:
           echo "PATH = $PATH"
 
       - name: Configure CMake
-        # Configure CMake in a 'build' subdirectory.
-        # `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
-        # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
+        if: matrix.cxx_flags == ''
         run: >
           cmake -B ${{ steps.strings.outputs.build-output-dir }}
           -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
           -DCMAKE_C_COMPILER=${{ matrix.c_compiler }}
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -S ${{ github.workspace }}
+
+      - name: Configure CMake (Coverage)
+        if: matrix.cxx_flags != ''
+        run: >
+          cmake -B ${{ steps.strings.outputs.build-output-dir }}
+          -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
+          -DCMAKE_C_COMPILER=${{ matrix.c_compiler }}
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DCMAKE_CXX_FLAGS="${{ matrix.cxx_flags }}"
+          -DCMAKE_C_FLAGS="${{ matrix.c_flags }}"
           -S ${{ github.workspace }}
 
       - name: Build
@@ -112,8 +123,28 @@ jobs:
         run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }}
 
       - name: Test
+        if: matrix.cxx_flags == ''
         working-directory: ${{ steps.strings.outputs.build-output-dir }}
         # Execute tests defined by the CMake configuration. Note that --build-config is needed because the default
         # Windows generator is a multi-config generator (Visual Studio generator).
         # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
         run: ctest --build-config ${{ matrix.build_type }}
+
+      - name: Test (Coverage)
+        if: matrix.cxx_flags != ''
+        working-directory: ${{ steps.strings.outputs.build-output-dir }}
+        # In the third line, `tests/units` is the name of the test runner binary.
+        run: |
+          pwd
+          ls
+          ctest --build-config ${{ matrix.build_type }}
+          llvm-profdata-17 merge -sparse tests/default.profraw -o my_profile
+          llvm-cov-17 show -instr-profile my_profile tests/units > coverage.txt
+          ls
+
+      - name: Upload coverage reports to Codecov
+        if: matrix.cxx_flags != ''
+        uses: codecov/codecov-action@v3
+        env:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: axionbuster/grass
