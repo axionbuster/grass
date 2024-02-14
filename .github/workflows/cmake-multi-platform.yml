@@ -15,23 +15,17 @@ jobs:
 
       matrix:
         os: [ ubuntu-latest, windows-latest, macos-latest ]
-        c_compiler: [ gcc, clang-17, cl, clang ]
+        c_compiler: [ gcc, clang-17, cl ]
         build_type: [ RelWithDebInfo ]
         exclude:
           - os: ubuntu-latest
             c_compiler: cl
-          - os: ubuntu-latest
-            c_compiler: clang
           - os: windows-latest
             c_compiler: gcc
           - os: windows-latest
             c_compiler: clang-17
-          - os: windows-latest
-            c_compiler: clang
           - os: macos-latest
             c_compiler: gcc
-          - os: macos-latest
-            c_compiler: clang-17
           - os: macos-latest
             c_compiler: cl
         include:
@@ -45,8 +39,8 @@ jobs:
             c_compiler: cl
             cpp_compiler: cl
           - os: macos-latest
-            c_compiler: clang
-            cpp_compiler: clang++
+            c_compiler: clang-17
+            cpp_compiler: clang++-17
 
     steps:
       - uses: actions/checkout@v3
