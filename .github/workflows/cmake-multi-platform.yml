@@ -15,7 +15,7 @@ jobs:
 
       matrix:
         os: [ ubuntu-latest, windows-latest, macos-latest ]
-        c_compiler: [ gcc, clang-17, cl ]
+        c_compiler: [ gcc, clang-17, cl, icx ]
         build_type: [ RelWithDebInfo ]
         exclude:
           - os: ubuntu-latest
@@ -24,10 +24,14 @@ jobs:
             c_compiler: gcc
           - os: windows-latest
             c_compiler: clang-17
+          - os: windows-latest
+            c_compiler: icx
           - os: macos-latest
             c_compiler: gcc
           - os: macos-latest
             c_compiler: cl
+          - os: macos-latest
+            c_compiler: icx
         include:
           - os: ubuntu-latest
             c_compiler: gcc
@@ -35,6 +39,9 @@ jobs:
           - os: ubuntu-latest
             c_compiler: clang-17
             cpp_compiler: clang++-17
+          - os: ubuntu-latest
+            c_compiler: icx
+            cpp_compiler: icpx
           - os: windows-latest
             c_compiler: cl
             cpp_compiler: cl
@@ -59,6 +66,16 @@ jobs:
           wget https://apt.llvm.org/llvm.sh
           chmod u+x ./llvm.sh
           sudo ./llvm.sh 17
+
+      - name: Set up Intel C++ Compiler (Ubuntu with Intel Compiler)
+        if: matrix.os == 'ubuntu-latest' && matrix.c_compiler == 'icx'
+        run: |
+          wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+            | gpg --dearmor | sudo tee /usr/share/keyrings/oneapi-archive-keyring.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] \ 
+            https://apt.repos.intel.com/oneapi all main" | sudo tee /etc/apt/sources.list.d/oneAPI.list
+          sudo apt-get update
+          sudo apt-get install -y intel-oneapi-dpcpp-cpp-compiler
 
       - name: Install Raylib dependencies (Ubuntu)
         id: install-deps-u
