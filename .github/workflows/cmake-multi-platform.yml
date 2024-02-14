@@ -135,12 +135,9 @@ jobs:
         working-directory: ${{ steps.strings.outputs.build-output-dir }}
         # In the third line, `tests/units` is the name of the test runner binary.
         run: |
-          pwd
-          ls
           ctest --build-config ${{ matrix.build_type }}
-          llvm-profdata-17 merge -sparse tests/default.profraw -o my_profile
+          llvm-profdata-17 merge tests/default.profraw -o my_profile
           llvm-cov-17 show -instr-profile my_profile tests/units > coverage.txt
-          ls
 
       - name: Upload coverage reports to Codecov
         if: matrix.cxx_flags != ''
