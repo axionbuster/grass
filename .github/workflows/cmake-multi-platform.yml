@@ -15,25 +15,23 @@ jobs:
 
       matrix:
         os: [ ubuntu-latest, windows-latest, macos-latest ]
-        c_compiler: [ gcc, clang-17, cl, clang ]
+        c_compiler: [ gcc, clang-17, cl, icx ]
         build_type: [ RelWithDebInfo ]
         exclude:
           - os: ubuntu-latest
             c_compiler: cl
-          - os: ubuntu-latest
-            c_compiler: clang
           - os: windows-latest
             c_compiler: gcc
           - os: windows-latest
             c_compiler: clang-17
           - os: windows-latest
-            c_compiler: clang
+            c_compiler: icx
           - os: macos-latest
             c_compiler: gcc
-          - os: macos-latest
-            c_compiler: clang-17
           - os: macos-latest
             c_compiler: cl
+          - os: macos-latest
+            c_compiler: icx
         include:
           - os: ubuntu-latest
             c_compiler: gcc
@@ -41,11 +39,14 @@ jobs:
           - os: ubuntu-latest
             c_compiler: clang-17
             cpp_compiler: clang++-17
+          - os: ubuntu-latest
+            c_compiler: icx
+            cpp_compiler: icpx
           - os: windows-latest
             c_compiler: cl
             cpp_compiler: cl
           - os: macos-latest
-            c_compiler: clang
+            c_compiler: clang-17
             cpp_compiler: clang++
 
     steps:
@@ -66,6 +67,15 @@ jobs:
           chmod u+x ./llvm.sh
           sudo ./llvm.sh 17
 
+      - name: Set up Intel C++ Compiler (Ubuntu with Intel Compiler)
+        if: matrix.os == 'ubuntu-latest' && matrix.c_compiler == 'icx'
+        run: |
+          wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | gpg --dearmor | sudo tee /usr/share/keyrings/oneapi-archive-keyring.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" | sudo tee /etc/apt/sources.list.d/oneAPI.list
+          sudo apt-get update
+          sudo apt-get install -y intel-oneapi-dpcpp-cpp-compiler
+          echo "/opt/intel/oneapi/compiler/latest/bin" >> $GITHUB_PATH
+
       - name: Install Raylib dependencies (Ubuntu)
         id: install-deps-u
         if: matrix.os == 'ubuntu-latest'
@@ -77,7 +87,13 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: |
           brew install llvm@17
-          echo "/usr/local/opt/llvm/bin" >> "$GITHUB_PATH"
+          echo "/usr/local/opt/llvm/bin" >> $GITHUB_PATH
+          ls /usr/local/opt/llvm/bin
+
+      - name: Print PATH (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          echo "PATH = $PATH"
 
       - name: Configure CMake
         # Configure CMake in a 'build' subdirectory.
