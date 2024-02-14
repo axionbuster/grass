@@ -71,7 +71,9 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: |
           brew install llvm@17
-          echo "/usr/local/opt/llvm/bin" >> "$GITHUB_PATH"
+          echo "/usr/local/opt/llvm/bin" >> $GITHUB_PATH
+          echo "PATH = $PATH"
+          ls /usr/local/opt/llvm/bin
 
       - name: Configure CMake
         # Configure CMake in a 'build' subdirectory.
