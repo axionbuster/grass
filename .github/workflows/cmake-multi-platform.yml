@@ -74,6 +74,7 @@ jobs:
           echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" | sudo tee /etc/apt/sources.list.d/oneAPI.list
           sudo apt-get update
           sudo apt-get install -y intel-oneapi-dpcpp-cpp-compiler
+          echo "/opt/intel/oneapi/compiler/latest/bin" >> $GITHUB_PATH
 
       - name: Install Raylib dependencies (Ubuntu)
         id: install-deps-u
