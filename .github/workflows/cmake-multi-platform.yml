@@ -103,9 +103,12 @@ jobs:
         run: |
           ctest --build-config ${{ matrix.build_type }}
           pwd
+          for filename in `ls tests/**/**/*.o`; do llvm-cov-17 gcov "$filename"; done
+          echo "llvm-cov-17 gcov \"$@\"" > llvm-gcov.sh
+          chmod u+x llvm-gcov.sh
+          sudo apt-get install -y lcov
           ls -lA
-          sudo apt-get install tree
-          tree tests
+          lcov --directory . --base-directory . --gcov-tool "$(PWD)/llvm-gcov.sh" --capture -o coverage.info
 
       - name: Upload coverage reports to Codecov
         if: matrix.cxx_flags != ''
