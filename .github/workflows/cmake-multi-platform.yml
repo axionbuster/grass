@@ -79,15 +79,8 @@ jobs:
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
           -S ${{ github.workspace }}
 
-      - name: Cache Build (CMake)
-        id: cache-build-cov
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.strings.outputs.build-output-dir }}
-          key: ${{ runner.os }}-build-cov
-
       - name: Configure CMake (Coverage)
-        if: matrix.cxx_flags != '' && steps.cache-build-cov.outputs.cache-hit != 'true'
+        if: matrix.cxx_flags != ''
         run: >
           cmake -B ${{ steps.strings.outputs.build-output-dir }}
           -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
@@ -98,7 +91,7 @@ jobs:
           -S ${{ github.workspace }}
 
       - name: Build
-        if: matrix.cxx_flags != '' && steps.cache-build-cov.outputs.cache-hit != 'true'
+        if: matrix.cxx_flags != ''
         # Build your program with the given configuration. Note that --config is needed because the default Windows
         # generator is a multi-config generator (Visual Studio generator).
         run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }}
