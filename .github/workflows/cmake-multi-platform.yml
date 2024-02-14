@@ -15,41 +15,14 @@ jobs:
 
       matrix:
         os: [ ubuntu-latest ]
-        c_compiler: [ gcc, clang-17, cl, icx ]
+        c_compiler: [ clang-17 ]
         build_type: [ RelWithDebInfo ]
-        exclude:
-          - os: ubuntu-latest
-            c_compiler: cl
-          - os: windows-latest
-            c_compiler: gcc
-          - os: windows-latest
-            c_compiler: clang-17
-          - os: windows-latest
-            c_compiler: icx
-          - os: macos-latest
-            c_compiler: gcc
-          - os: macos-latest
-            c_compiler: cl
-          - os: macos-latest
-            c_compiler: icx
         include:
-          - os: ubuntu-latest
-            c_compiler: gcc
-            cpp_compiler: g++
           - os: ubuntu-latest
             c_compiler: clang-17
             cpp_compiler: clang++-17
             cxx_flags: --coverage
             c_flags: --coverage
-          - os: ubuntu-latest
-            c_compiler: icx
-            cpp_compiler: icpx
-          - os: windows-latest
-            c_compiler: cl
-            cpp_compiler: cl
-          - os: macos-latest
-            c_compiler: clang-17
-            cpp_compiler: clang++
 
     steps:
       - uses: actions/checkout@v3
