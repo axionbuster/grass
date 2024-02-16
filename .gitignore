@@ -1,11 +1,9 @@
 /.vscode/
-/cmake-build-debug/
 /.vs
 /out
 /CMakeSettings.json
 /vc140.idb
 /vc140.pdb
 /cmake-build-*
-/Testing/Temporary
-/tests/Testing/Temporary/CTestCostData.txt
-/tests/Testing/Temporary/LastTest.log
+/tests/Testing/Temporary/*
+/.idea
