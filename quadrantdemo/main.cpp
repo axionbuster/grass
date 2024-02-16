@@ -6,7 +6,7 @@
 #include <vector>
 
 int do_main() {
-  long constexpr SEED = 1234, N_PARTICLES = 12, DIVISOR = 4,
+  long constexpr SEED = 1234, N_PARTICLES = 100, DIVISOR = 25,
                  C_QUOTIENT = N_PARTICLES / DIVISOR + !!(N_PARTICLES % DIVISOR);
   float constexpr RADIUS = 0.00390625f;
 
@@ -66,8 +66,16 @@ int do_main() {
       // Draw the bounding boxes.
       for (long i = 0; i < boxes.size(); i++) {
         auto color = colors[i];
-        auto const &box = boxes[i];
-        DrawRectangleLinesEx(box.rectangle(), 1.0f, color);
+        auto rectangle = boxes[i].rectangle();
+        if (rectangle.width < 0) {
+          rectangle.x += rectangle.width;
+          rectangle.width = std::abs(rectangle.width);
+        }
+        if (rectangle.height < 0) {
+          rectangle.y += rectangle.height;
+          rectangle.height = std::abs(rectangle.height);
+        }
+        DrawRectangleLinesEx(rectangle, RADIUS, color);
       }
     }
     EndMode2D();

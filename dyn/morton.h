@@ -8,7 +8,7 @@
 
 namespace dyn {
 
-namespace dyn::morton::detail {
+namespace morton::detail {
 constexpr uint32_t order32(float x) {
   // Due to Tropf (2021).
   auto sgn = uint32_t(1) << 31, i = std::bit_cast<uint32_t>(x);
@@ -34,7 +34,7 @@ constexpr uint64_t interleave32(uint32_t re, uint32_t im) {
       Help{0x0f0f0f0f0f0f0f0f, 4}, Help{0x3333333333333333, 2},
       Help{0x5555555555555555, 1}};
 
-  std::array<uint32_t, 2> W{re, im};
+  std::array<uint64_t, 2> W{re, im};
   for (auto &&w : W)
     for (auto &&h : H) {
       // "Duplicate" the bits (shift-then-OR) and then mask result.
@@ -43,10 +43,10 @@ constexpr uint64_t interleave32(uint32_t re, uint32_t im) {
   // Imaginary first.
   return W[0] | (W[1] << 1);
 }
-} // namespace dyn::morton::detail
+} // namespace morton::detail
 
 constexpr uint64_t morton32(std::complex<float> xy) {
-  using namespace dyn::morton::detail;
+  using namespace morton::detail;
   return interleave32(order32(xy.real()), order32(xy.imag()));
 }
 
