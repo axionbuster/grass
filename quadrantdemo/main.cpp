@@ -21,7 +21,7 @@ std::array<float, 3> hsl2rgb(std::array<float, 3> hsl) {
 /// @brief Do main loop. Return `true` if to be shown again.
 bool show() {
   long constexpr N_PARTICLES = 10000, MAX_N_QUEUE = N_PARTICLES / 4;
-  float constexpr RADIUS = 0.00390625f, SATURATION = 0.75f, LIGHTNESS = 0.66f;
+  float constexpr RADIUS = 0.0078125f, SATURATION = 0.75f, LIGHTNESS = 0.66f;
   uint64_t constexpr MASK = 0xffff'0000'0000'0000;
 
   std::random_device seed;
@@ -31,7 +31,7 @@ bool show() {
   // Generate particles and then sort them by Morton order.
   std::vector<std::complex<float>> pp;
   for (long i = 0; i < N_PARTICLES; i++) {
-    auto point = [&rng, &udist]() { return 2.0f * udist(rng) - 1.0f; };
+    auto point = [&rng, &udist]() { return 4.0f * udist(rng) - 2.0f; };
     pp.emplace_back(point(), point());
   }
   std::ranges::sort(pp.begin(), pp.end(), {}, dyn::morton32);
@@ -40,7 +40,7 @@ bool show() {
   auto scw = float(GetScreenWidth()), sch = float(GetScreenHeight());
   auto scs = std::min(scw, sch) * 0.5f;
   Camera2D cam{};
-  cam.zoom = scs;
+  cam.zoom = scs * 0.5f;
   cam.offset = {scs, scs};
 
   // Let the drawing begin at the particle at index q.
