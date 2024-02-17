@@ -36,10 +36,10 @@ constexpr uint64_t interleave32(uint32_t re, uint32_t im) {
 
   std::array<uint64_t, 2> W{re, im};
   for (auto &&w : W)
-    for (auto &&h : H) {
+    for (auto &&h : H)
       // "Duplicate" the bits (shift-then-OR) and then mask result.
       w = (w | (w << h.shift)) & h.mask;
-    }
+
   // Imaginary first.
   return W[0] | (W[1] << 1);
 }
