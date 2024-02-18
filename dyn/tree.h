@@ -22,7 +22,7 @@ class Node {
 
   /// @brief Place the particle (p) in the quadrant set (kids) at the given
   /// level of precision. Call `rewrite` recursively with a lower precision.
-  void place(size_t p, Kids &kids, int precision, auto get_xy, auto get_mass) {
+  void place(size_t p, Kids &kids, int precision, auto const &get_xy) {
     assert(precision > 0);
     // Compute geometric center of this.
     auto center = ll + 0.5f * std::complex{s, s};
@@ -30,12 +30,12 @@ class Node {
     auto gx = pxy.real() > center.real();
     auto gy = pxy.imag() > center.imag();
     auto qu = int(gx) | int(gy) << 1;
-    kids[qu]->rewrite(p, precision - 1, get_xy, get_mass);
+    kids[qu]->rewrite(p, precision - 1, get_xy);
   }
 
   /// @brief Assuming that particles are in contiguous, consecutive ordering,
   /// insert the particle (p) at the given level of precision (non-negative).
-  void rewrite(size_t p, int const precision, auto get_xy, auto get_mass) {
+  void rewrite(size_t p, int const precision, auto const &get_xy) {
     // Action Plan.
     //
     // type  | stimulus       | what to do
@@ -44,12 +44,12 @@ class Node {
     // empty | precision != 0 | (Ditto.)
     // list  | precision == 0 | Extend the list with p.
     // list  | precision != 0 | Break up into quadrants, apply recursion.
-    // quad  | precision == 0 | [!] Impossible or invalid.
-    // quad  | precision != 0 | Place p at the correct quadrant.
+    // kids  | precision == 0 | [!] Impossible or invalid.
+    // kids  | precision != 0 | Place p at the correct quadrant ("kid").
 
     if (std::holds_alternative<Kids>(variant))
-      // "quad" case.
-      return place(p, std::get<Kids>(variant), precision, get_xy, get_mass);
+      // "kids" case.
+      return place(p, std::get<Kids>(variant), precision, get_xy);
 
     // "empty" or "list" case.
     auto &[b, e] = std::get<Range>(variant);
@@ -57,7 +57,6 @@ class Node {
       // "empty".
       // ==> Place the first particle (p).
       b = p, e = p + 1;
-      xy = get_xy(p), m = get_mass(p);
     } else if (precision) {
       // "list" + "precision != 0"
       // ==> Break up into quadrants, apply recursion.
@@ -71,6 +70,7 @@ class Node {
       typedef std::complex<float> C;
       // significant bit: y (1 if greater than center y).
       // less significant bit: x (1 if greater than center x).
+      // "ll": less-less corner of the square representing "this."
       kids[0b00]->ll = ll;
       kids[0b01]->ll = ll + C{half, 0.0f};
       kids[0b10]->ll = ll + C{0.0f, half};
@@ -78,27 +78,20 @@ class Node {
 
       // Move all particles (q) in the list [b...e] to the quadrant set (kids).
       for (auto q = b; q != e; q++)
-        place(q, kids, precision, get_xy, get_mass);
+        place(q, kids, precision, get_xy);
 
       // Commit to new type.
       variant = std::move(kids);
 
       // Try again with the same particle (p) and precision.
-      rewrite(p, precision, get_xy, get_mass);
+      rewrite(p, precision, get_xy);
     } else {
       // "list" + "precision == 0"
       // ==> Extend the list with p.
-
-      // Append p. Assume that p == e + 1.
+      // Append p. Assume that p == e + 1 (list must be contiguous).
       assert(p == e + 1);
       e++;
-      // FIXME: Assess potential accuracy problem.
-      // Compute new mass (m) and center of mass (xy).
-      auto pm = get_mass(p);
-      xy *= m;
-      xy += get_xy(p) * pm;
-      m += pm;
-      xy /= m;
+      // (END).
     }
   }
 };
