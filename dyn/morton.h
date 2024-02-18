@@ -5,6 +5,7 @@
 #include <bit>
 #include <complex>
 #include <cstdint>
+#include <optional>
 
 namespace dyn {
 
@@ -48,6 +49,19 @@ constexpr uint64_t interleave32(uint32_t re, uint32_t im) {
 constexpr uint64_t morton32(std::complex<float> xy) {
   using namespace morton::detail;
   return interleave32(order32(xy.real()), order32(xy.imag()));
+}
+
+template <uint32_t Precision = 512>
+std::optional<uint64_t> fixedmorton32(std::complex<float> xy) {
+  xy *= float(Precision);
+  if (std::abs(xy.real()) <= float(INT32_MAX) &&
+      std::abs(xy.imag()) <= float(INT32_MAX)) {
+    auto sgn = 0x8000'0000u;
+    auto x = std::bit_cast<uint32_t>(int32_t(xy.real())) ^ sgn;
+    auto y = std::bit_cast<uint32_t>(int32_t(xy.imag())) ^ sgn;
+    return morton::detail::interleave32(x, y);
+  }
+  return {};
 }
 
 } // namespace dyn

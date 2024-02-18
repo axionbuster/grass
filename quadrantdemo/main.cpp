@@ -20,9 +20,10 @@ std::array<float, 3> hsl2rgb(std::array<float, 3> hsl) {
 
 /// @brief Do main loop. Return `true` if to be shown again.
 bool show() {
-  long constexpr N_PARTICLES = 10000, MAX_N_QUEUE = N_PARTICLES / 4;
+  long constexpr N_PARTICLES = 5000, MAX_N_QUEUE = N_PARTICLES / 4;
   float constexpr RADIUS = 0.0078125f, SATURATION = 0.75f, LIGHTNESS = 0.66f;
-  uint64_t constexpr MASK = 0xffff'0000'0000'0000;
+  uint64_t constexpr MASK = 0xffff'ffff'ffff'0000;
+  auto const MORTON = dyn::fixedmorton32<512>;
 
   std::random_device seed;
   std::mt19937 rng(seed());
@@ -34,7 +35,7 @@ bool show() {
     auto point = [&rng, &udist]() { return 4.0f * udist(rng) - 2.0f; };
     pp.emplace_back(point(), point());
   }
-  std::ranges::sort(pp.begin(), pp.end(), {}, dyn::morton32);
+  std::ranges::sort(pp.begin(), pp.end(), {}, MORTON);
 
   // Let center of window point to world origin.
   auto scw = float(GetScreenWidth()), sch = float(GetScreenHeight());
@@ -61,8 +62,9 @@ bool show() {
       ClearBackground(BLACK);
       // Color and then draw the particles.
       auto particle = pp[q];
+      auto morton = MORTON(particle).value_or(prefix);
       // Compare prefix with previous particle to decide new color.
-      auto pfx = dyn::morton32(particle) & MASK;
+      auto pfx = morton & MASK;
       if (pfx == prefix) {
         // Same quadrant, old color.
         colors.push_front(colors.front());
@@ -72,9 +74,11 @@ bool show() {
         // New quadrant, new color.
         auto hue = udist(rng);
         auto rgb = hsl2rgb({hue, SATURATION, LIGHTNESS});
-        colors.emplace_front((unsigned char)(255.0f * rgb[0]),
-                             (unsigned char)(255.0f * rgb[1]),
-                             (unsigned char)(255.0f * rgb[2]), 255);
+        for (auto &&c : rgb)
+          c *= 255.0f;
+        typedef unsigned char Q;
+        Color c{Q(rgb[0]), Q(rgb[1]), Q(rgb[2]), 255};
+        colors.push_front(c);
         if (colors.size() > MAX_N_QUEUE)
           colors.pop_back();
       }
