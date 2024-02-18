@@ -21,6 +21,7 @@ class Node {
   float m{}, s{};
 
   void place(size_t p, Kids &kids, int precision, auto get_xy, auto get_mass) {
+    assert(precision);
     // Compute geometric center of this.
     auto center = ll + 0.5f * std::complex{s, s};
     auto pxy = get_xy(p);
@@ -58,8 +59,7 @@ class Node {
         xy /= m;
       }
     } else {
-      assert(precision);
-      place(p, std::get<Kids>(variant), precision - 1, get_xy, get_mass);
+      place(p, std::get<Kids>(variant), precision, get_xy, get_mass);
     }
   }
 };
