@@ -20,7 +20,7 @@ class Node {
   std::complex<float> xy, ll;
   float m{}, s{};
 
-  void place(size_t p, Kids kids, int precision, auto get_xy, auto get_mass) {
+  void place(size_t p, Kids &kids, int precision, auto get_xy, auto get_mass) {
     // Compute geometric center of this.
     auto center = ll + 0.5f * std::complex{s, s};
     auto pxy = get_xy(p);
@@ -39,6 +39,7 @@ class Node {
       } else if (precision) {
         Kids kids;
         for (auto &&k : kids)
+          // FIXME: Set center, side length
           k = std::make_unique<Node>();
         for (auto q = b; q != e; q++)
           place(q, kids, precision, get_xy, get_mass);
