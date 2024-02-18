@@ -62,6 +62,10 @@ jobs:
         run: |
           echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
 
+      - name: Update APT (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update
+
       - name: Install Clang 17 (Ubuntu with Clang)
         if: matrix.os == 'ubuntu-latest' && matrix.c_compiler == 'clang-17'
         run: |
