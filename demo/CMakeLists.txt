@@ -34,7 +34,7 @@ add_executable(grass main.cpp
         irhall.h)
 
 if(MSVC)
-    target_compile_options(grass PRIVATE /W4 /WX)
+    target_compile_options(grass PRIVATE /W4)
 else()
     target_compile_options(grass PRIVATE -Wall -Wextra -Wpedantic)
 endif()

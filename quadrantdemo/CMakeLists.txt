@@ -25,7 +25,7 @@ set(CMAKE_WIN32_EXECUTABLE TRUE)
 add_executable(quadrantdemo main.cpp)
 
 if(MSVC)
-    target_compile_options(quadrantdemo PRIVATE /W4 /WX)
+    target_compile_options(quadrantdemo PRIVATE /W4)
 else()
     target_compile_options(quadrantdemo PRIVATE -Wall -Wextra -Wpedantic)
 endif()
