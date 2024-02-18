@@ -91,7 +91,7 @@ bool show() {
         auto j = i < 0 ? i + N_PARTICLES : i;
         auto p = pp[j];
         // Manipulate color (fade out).
-        auto c = n < colors.size() ? colors[n] : BLACK;
+        auto c = n < long(colors.size()) ? colors[n] : BLACK;
         auto ease_cubic = [](float a) { return 1.0f - a * a * a; };
         c = Fade(c, ease_cubic(float(n) / float(MAX_N_QUEUE)));
         // Yup. Draw it.
