@@ -42,7 +42,7 @@ public:
   std::complex<F> field(Circle<F> c0, Circle<F> c1, F m1) const noexcept {
     // Use complex arithmetic to translate the coordinate system so that c0
     // appears to be at the origin, but let the respective radii be unaffected.
-    c1 -= c0, c0 -= c0;
+    c1 -= c0;
 
     // Are the circles...
     auto s = c1.radius + c0.radius, d = std::abs(c1.radius - c0.radius),
