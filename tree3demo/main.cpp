@@ -30,7 +30,7 @@ private:
 
 int do_main() {
   InitWindow(600, 600, "A");
-  SetTargetFPS(60);
+  SetTargetFPS(15);
   auto s = State::fresh();
   Camera2D cam{};
   {
@@ -76,6 +76,10 @@ int do_main() {
     ClearBackground(BLACK);
     BeginMode2D(cam);
     {
+      // Mouse.
+      auto [mx, my] = GetScreenToWorld2D(GetMousePosition(), cam);
+      auto mouse = std::complex{mx, my};
+
       // 2 px.
       auto radius = 2.0f / cam.zoom;
       auto &&pp = s.particles;
@@ -85,6 +89,12 @@ int do_main() {
       for (auto &&c : s.nodes) {
         if (c.radius) {
           auto center = Vector2{c.center.real(), c.center.imag()};
+          auto distance = std::abs(mouse - c.center);
+          if (distance < c.radius) {
+            auto fade = 1.0f - distance / c.radius;
+            auto color = Fade(WHITE, fade * fade * fade);
+            DrawCircleV(center, c.radius, color);
+          }
           DrawCircleLinesV(center, c.radius, WHITE);
         }
       }
