@@ -98,6 +98,34 @@ bool show() {
         DrawCircleV({p.real(), p.imag()}, RADIUS, c);
       }
       q = (q + 1) % N_PARTICLES;
+      {
+        auto code = dyn::fixedmorton32<512>(pp[0]).value() & MASK;
+        for (;;) {
+          auto proj = [MASK](auto c) -> std::optional<uint64_t> {
+            if (auto d = dyn::fixedmorton32<512>(c); d.has_value()) {
+              return d.value() & MASK;
+            } else {
+              return {};
+            }
+          };
+          auto [first, last] =
+              std::ranges::equal_range(pp.begin(), pp.end(), code, {}, proj);
+          if (first == last)
+            break;
+          last--;
+          auto ll = *first, gg = *last;
+          auto wh = gg - ll;
+          Rectangle rect{ll.real(), ll.imag(), wh.real(), wh.imag()};
+          DrawRectangleLinesEx(rect, RADIUS, WHITE);
+          last++;
+          if (last == pp.end())
+            break;
+          if (auto c = dyn::fixedmorton32<512>(*last); c.has_value()) {
+            code = c.value() & MASK;
+          } else
+            break;
+        }
+      }
     }
     EndMode2D();
     EndDrawing();
