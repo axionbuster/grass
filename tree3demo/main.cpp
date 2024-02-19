@@ -1,8 +1,8 @@
+#include <algorithm>
 #include <complex>
 #include <morton.h>
 #include <optional>
 #include <random>
-#include <ranges>
 #include <raylib.h>
 #include <tree.h>
 #include <vector>
@@ -11,27 +11,27 @@ int constexpr N = 1000;
 
 struct State {
   std::vector<std::complex<float>> particles;
-  std::vector<
-      dyn::tree32::Node<std::ranges::subrange<decltype(particles.begin())>>>
-      wip;
-  State() {
+  std::vector<dyn::tree32::Node<decltype(particles.begin())>> nodes;
+  static State fresh() {
+    State s;
     std::mt19937 rng(std::random_device{}());
     std::normal_distribution<float> dist;
-    particles.reserve(N);
+    s.particles.reserve(N);
     for (int i = 0; i < N; i++)
-      particles.emplace_back(dist(rng), dist(rng));
+      s.particles.emplace_back(dist(rng), dist(rng));
+    std::ranges::sort(s.particles.begin(), s.particles.end(), {},
+                      dyn::fixedmorton32<512>);
+    return s;
   }
-};
 
-template <std::ranges::range R> struct MyRange {
-  R range;
-  MyRange(auto begin, auto end) : range{begin, end} {}
+private:
+  State() = default;
 };
 
 int do_main() {
   InitWindow(600, 600, "A");
   SetTargetFPS(60);
-  State s;
+  auto s = State::fresh();
   Camera2D cam{};
   {
     auto w = float(GetScreenWidth()), h = float(GetScreenHeight()),
@@ -40,17 +40,36 @@ int do_main() {
     cam.zoom = 0.25f * z;
   }
   while (!WindowShouldClose()) {
+    if (IsKeyPressed(KEY_R)) {
+      s = State::fresh();
+      BeginDrawing();
+      EndDrawing();
+      continue;
+    }
+
     {
       // Compute morton.
       uint64_t constexpr MASK = 0xffff'ffff'ffff'0000;
       auto z_masked = [MASK](auto xy) {
         auto z = dyn::fixedmorton32<512>(xy);
         if (z.has_value())
-          return z.value() & MASK;
+          return std::optional<uint64_t>{z.value() & MASK};
         else
           return std::optional<uint64_t>{};
       };
-      //      auto with_node = [&s](auto );
+      auto with_node = [&s](auto node) { s.nodes.push_back(node); };
+      dyn::tree32::group(s.particles.begin(), s.particles.end(), z_masked,
+                         with_node);
+      for (auto &&n : s.nodes) {
+        std::complex<float> center;
+        float radius{}, count{1.0f};
+        for (auto &&p : n)
+          center += (p - center) / count++;
+        for (auto &&p : n)
+          radius = std::max(radius, std::abs(p - center));
+        n.center = center;
+        n.radius = radius;
+      }
     }
 
     BeginDrawing();
@@ -63,6 +82,12 @@ int do_main() {
       for (auto &&p : pp)
         DrawCircleV({p.real(), p.imag()}, radius, WHITE);
       // Tree circles.
+      for (auto &&c : s.nodes) {
+        if (c.radius) {
+          auto center = Vector2{c.center.real(), c.center.imag()};
+          DrawCircleLinesV(center, c.radius, WHITE);
+        }
+      }
     }
     EndMode2D();
     EndDrawing();
