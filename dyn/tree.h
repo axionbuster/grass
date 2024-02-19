@@ -16,25 +16,26 @@ class Node {
   friend class Tree;
   typedef std::array<std::unique_ptr<Node>, 4> Kids;
   typedef std::pair<size_t, size_t> Range;
-  std::variant<Kids, Range> variant;
+  std::variant<Range, Kids> variant;
   std::complex<float> xy, ll;
   float m{}, s{};
 
   /// @brief Place the particle (p) in the quadrant set (kids) at the given
   /// level of precision. Call `rewrite` recursively with a lower precision.
-  void place(size_t p, Kids &kids, int precision, auto const &get_xy) {
-    assert(precision > 0);
+  void place(size_t p, int precision, auto const &get_xy) {
+    assert(precision);
     // Compute geometric center of this.
     auto center = ll + 0.5f * std::complex{s, s};
     auto pxy = get_xy(p);
     auto gx = pxy.real() > center.real();
     auto gy = pxy.imag() > center.imag();
     auto qu = int(gx) | int(gy) << 1;
+    auto &kids = std::get<Kids>(variant);
     kids[qu]->rewrite(p, precision - 1, get_xy);
   }
 
   /// @brief Assuming that particles are in contiguous, consecutive ordering,
-  /// insert the particle (p) at the given level of precision (non-negative).
+  /// insert the particle (p) at the given level of precision.
   void rewrite(size_t p, int const precision, auto const &get_xy) {
     // Action Plan.
     //
@@ -49,7 +50,7 @@ class Node {
 
     if (std::holds_alternative<Kids>(variant))
       // "kids" case.
-      return place(p, std::get<Kids>(variant), precision, get_xy);
+      return place(p, precision, get_xy);
 
     // "empty" or "list" case.
     auto &[b, e] = std::get<Range>(variant);
@@ -76,20 +77,23 @@ class Node {
       kids[0b10]->ll = ll + C{0.0f, half};
       kids[0b11]->ll = ll + C{half, half};
 
-      // Move all particles (q) in the list [b...e] to the quadrant set (kids).
-      for (auto q = b; q != e; q++)
-        place(q, kids, precision, get_xy);
+      // Copy the index values of the references b and e, which become invalid.
+      auto bb = b, ee = e;
 
       // Commit to new type.
       variant = std::move(kids);
+
+      // Move all particles (q) in the list [b...e] to the quadrant set (kids).
+      for (auto q = bb; q != ee; q++)
+        place(q, precision, get_xy);
 
       // Try again with the same particle (p) and precision.
       rewrite(p, precision, get_xy);
     } else {
       // "list" + "precision == 0"
       // ==> Extend the list with p.
-      // Append p. Assume that p == e + 1 (list must be contiguous).
-      assert(p == e + 1);
+      // Append p. Assume that p == e (list must be contiguous).
+      assert(p == e);
       e++;
       // (END).
     }
@@ -119,6 +123,34 @@ class Node {
     if (m != 0.0f)
       xy /= m;
   }
+
+public:
+  /// @brief Kind of a node (mutually exclusive).
+  enum Kind { EMPTY, TERMINAL, INTERNAL };
+
+  /// @brief Classify itself.
+  [[nodiscard]] constexpr Kind kind() const {
+    if (std::holds_alternative<Kids>(variant))
+      return INTERNAL;
+    auto &[b, e] = std::get<Range>(variant);
+    return b == e ? EMPTY : TERMINAL;
+  }
+
+  /// @brief Return a node to the quadrant (be it "empty" --- but not
+  /// unique_ptr empty; if internal).
+  std::unique_ptr<Node> &quadrant(unsigned char q) {
+    if (kind() != INTERNAL)
+      throw;
+    return std::get<Kids>(variant).at(q);
+  }
+
+  /// @brief Return the inclusive-exclusive range of particles (if not
+  /// internal).
+  [[nodiscard]] std::pair<size_t, size_t> particles() const {
+    if (kind() == INTERNAL)
+      throw;
+    return std::get<Range>(variant);
+  }
 };
 
 /// @brief A Barnes-Hut tree (WIP).
@@ -139,9 +171,11 @@ public:
 
   /// @brief Construct a tree given a Morton-order (Z-order) sorted list of
   /// particles.
-  static Tree from_z_ordered(int precision, size_t n, auto const &get_xy,
+  static Tree from_z_ordered(int precision, size_t n, std::complex<float> ll,
+                             float side, auto const &get_xy,
                              auto const &get_mass) {
     auto root = std::make_unique<Node>();
+    root->ll = ll, root->s = side;
     for (size_t i = 0; i < n; i++) {
       root->rewrite(i, precision, get_xy);
     }
