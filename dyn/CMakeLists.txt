@@ -9,5 +9,6 @@ add_library(dyn INTERFACE
         verlet.h
         tree.h
         morton.h
+        tree.h
         tree.h)
 target_include_directories(dyn INTERFACE .)

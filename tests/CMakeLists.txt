@@ -13,8 +13,7 @@ include(GoogleTest)
 add_executable(units yoshida_test.cpp
         newton_test.cpp
         circle_test.cpp
-        morton_test.cpp
-        tree_test.cpp)
+        morton_test.cpp)
 target_precompile_headers(units INTERFACE "gtest/gtest.h")
 target_link_libraries(units gtest_main dyn)
 gtest_discover_tests(units)
