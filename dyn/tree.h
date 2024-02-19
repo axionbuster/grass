@@ -38,14 +38,14 @@ class Node {
   void rewrite(size_t p, int const precision, auto const &get_xy) {
     // Action Plan.
     //
-    // type  | stimulus       | what to do
+    // from  | stimulus       | to   | what to do
     // -----------------------------------
-    // empty | precision == 0 | Place the first particle (p).
-    // empty | precision != 0 | (Ditto.)
-    // list  | precision == 0 | Extend the list with p.
-    // list  | precision != 0 | Break up into quadrants, apply recursion.
-    // kids  | precision == 0 | [!] Impossible or invalid.
-    // kids  | precision != 0 | Place p at the correct quadrant ("kid").
+    // empty | precision == 0 | list | Place the first particle (p).
+    // empty | precision != 0 | list | (Ditto.)
+    // list  | precision == 0 | list | Extend the list with p.
+    // list  | precision != 0 | kids | Break up, apply recursion.
+    // kids  | precision == 0 | ---- | [!] Impossible or invalid.
+    // kids  | precision != 0 | kids | Place p at the correct quadrant ("kid").
 
     if (std::holds_alternative<Kids>(variant))
       // "kids" case.
@@ -94,10 +94,60 @@ class Node {
       // (END).
     }
   }
+
+  /// @brief Compute mass and center of mass of this node and its descendants.
+  void weigh(auto const &get_xy, auto const &get_mass) {
+    xy = {}, m = {};
+    if (std::holds_alternative<Kids>(variant)) {
+      auto &&kids = std::get<Kids>(variant);
+      for (auto &&k : kids) {
+        xy += k->xy * k->m;
+        m += k->m;
+      }
+      // If no particles, let nothing happen.
+      if (m != 0.0f)
+        xy /= m;
+      return;
+    }
+    auto &[b, e] = std::get<Range>(variant);
+    for (auto p = b; p != e; p++) {
+      auto pxy = get_xy(p);
+      auto pm = get_mass(p);
+      xy += pxy * pm;
+      m += pm;
+    }
+    if (m != 0.0f)
+      xy /= m;
+  }
 };
 
+/// @brief A Barnes-Hut tree (WIP).
 class Tree {
+  /// @brief The root node (if it exists).
   std::unique_ptr<Node> _root;
+  Tree(std::unique_ptr<Node> root) : _root(std::move(root)) {}
+
+public:
+  Tree() = default;
+  Tree(Tree &&tree) noexcept : _root(std::move(tree._root)) {}
+  Tree &operator=(Tree &&tree) noexcept {
+    if (this == &tree)
+      return *this;
+    _root = std::move(tree._root);
+    return *this;
+  }
+
+  /// @brief Construct a tree given a Morton-order (Z-order) sorted list of
+  /// particles.
+  static Tree from_z_ordered(int precision, size_t n, auto const &get_xy,
+                             auto const &get_mass) {
+    auto root = std::make_unique<Node>();
+    for (size_t i = 0; i < n; i++) {
+      root->rewrite(i, precision, get_xy);
+    }
+    root->weigh(get_xy, get_mass);
+    return {std::move(root)};
+  }
 };
 
 } // namespace dyn::tree32
