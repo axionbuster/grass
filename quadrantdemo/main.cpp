@@ -28,14 +28,22 @@ bool show() {
   std::random_device seed;
   std::mt19937 rng(seed());
   std::uniform_real_distribution<float> udist;
+  std::normal_distribution<float> zdist;
 
   // Generate particles and then sort them by Morton order.
   std::vector<std::complex<float>> pp;
-  for (long i = 0; i < N_PARTICLES; i++) {
-    auto point = [&rng, &udist]() { return 4.0f * udist(rng) - 2.0f; };
-    pp.emplace_back(point(), point());
+  {
+    std::array centers{std::complex{-0.5f, -0.5f}, std::complex{0.5f, 0.5f}};
+    std::uniform_int_distribution pick(0, int(centers.size() - 1));
+    for (long i = 0; i < N_PARTICLES; i++) {
+      auto j = pick(rng);
+      auto center = centers[j];
+      auto plot = [&rng, &zdist]() { return 0.20f * zdist(rng); };
+      auto point = std::complex{plot(), plot()};
+      pp.push_back(center + point);
+    }
+    std::ranges::sort(pp.begin(), pp.end(), {}, MORTON);
   }
-  std::ranges::sort(pp.begin(), pp.end(), {}, MORTON);
 
   // Let center of window point to world origin.
   auto scw = float(GetScreenWidth()), sch = float(GetScreenHeight());
@@ -112,11 +120,32 @@ bool show() {
               std::ranges::equal_range(pp.begin(), pp.end(), code, {}, proj);
           if (first == last)
             break;
+          auto center = std::complex{0.0f, 0.0f};
+          auto radius = 0.0f;
+          auto m = 1.0f;
+          for (auto i = first; i != last; i++) {
+            center += (*i - center) / m++;
+          }
+          for (auto i = first; i != last; i++) {
+            radius = std::max(radius, std::abs(*i - center));
+          }
           last--;
           auto ll = *first, gg = *last;
           auto wh = gg - ll;
-          Rectangle rect{ll.real(), ll.imag(), wh.real(), wh.imag()};
+          // wh: floating point rounding inside fixedmorton32 may occasionally
+          // produce inverted rectangles.
+          if (wh.real() < 0.0f) {
+            ll += wh.real();
+            wh.real(wh.real() * -1.0f);
+          }
+          if (wh.imag() < 0.0f) {
+            ll.imag(ll.imag() + wh.imag());
+            wh.imag(wh.imag() * -1.0f);
+          }
+          Rectangle rect{ll.real(), ll.imag(), std::abs(wh.real()),
+                         std::abs(wh.imag())};
           DrawRectangleLinesEx(rect, RADIUS, WHITE);
+          DrawCircleLinesV({center.real(), center.imag()}, radius, WHITE);
           last++;
           if (last == pp.end())
             break;
