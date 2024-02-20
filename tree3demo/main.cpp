@@ -186,38 +186,21 @@ int do_main() {
     BeginDrawing();
     ClearBackground(BLACK);
 
-    // Print top-left text.
-    {
-      auto mask = std::bit_cast<uint64_t>(s.mask);
-      auto zeroes = std::countr_zero(mask);
-      // 16: offset (y; px).
-      // 24: 20 [= font size; px] + 4 [= padding; px].
-      auto line_y = [](auto i) { return 16 + 24 * i; };
-      auto i = 0;
-      auto constexpr COLOR = WHITE;
-      char text[128]{};
-      std::snprintf(text, sizeof text, "Mask = 0x%" PRIx64 " (%d zeroes)", mask,
-                    zeroes);
-      DrawText(text, 16, line_y(i++), 20, COLOR);
-      std::snprintf(text, sizeof text, "(%d nodes/groups)",
-                    int(s.nodes.size()));
-      DrawText(text, 16, line_y(i++), 20, COLOR);
-      std::snprintf(text, sizeof text, "Angle threshold ~ %.1f deg",
-                    s.angle_threshold * 180.0f / std::numbers::pi_v<float>);
-      DrawText(text, 16, line_y(i++), 20, COLOR);
-      DrawText("Left or right key to shift mask", 16, line_y(i++), 20, COLOR);
-      DrawText("Up or down key to change angle threshold", 16, line_y(i++), 20,
-               COLOR);
-      DrawText("R to reset", 16, line_y(i++), 20, COLOR);
-    }
-
     // Draw circles, particles, visualizations.
+
+    // Count "good" nodes.
+    struct {
+      int good_nodes{};
+      bool casting{};
+    } ray_report;
+
     BeginMode2D(cam);
     {
       // Mouse.
       auto [mx, my] = GetScreenToWorld2D(GetMousePosition(), cam);
       auto mouse = std::complex{mx, my};
       auto mouse_down = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
+      ray_report.casting = mouse_down;
 
       // 2 px.
       auto radius = 2.0f / cam.zoom;
@@ -274,6 +257,8 @@ int do_main() {
               if (good) {
                 // NaN -> !good -> this branch not hit.
 
+                ray_report.good_nodes++;
+
                 // Cast rays.
                 auto line_color = Fade(primary_color, 0.5f);
                 DrawLineV({mx, my}, v_perp_rad1, line_color);
@@ -293,6 +278,41 @@ int do_main() {
         }
       }
     }
+    EndMode2D();
+
+    // Print top-left text.
+    {
+      auto mask = std::bit_cast<uint64_t>(s.mask);
+      auto zeroes = std::countr_zero(mask);
+      // 16: offset (y; px).
+      // 24: 20 [= font size; px] + 4 [= padding; px].
+      auto y = [](auto i) { return 16 + 24 * i; };
+      // Line number (start at 0).
+      auto i = 0;
+      auto constexpr COLOR = WHITE;
+      char text[128]{};
+      // Count plural nodes (nodes with two or more particles).
+      auto plural = 0;
+      for (auto &&n : s.nodes)
+        plural += int(n.last != n.first && n.last != n.first + 1);
+      std::snprintf(text, sizeof text, "Mask = 0x%" PRIx64 " (%d zeroes)", mask,
+                    zeroes);
+      DrawText(text, 16, y(i++), 20, COLOR);
+      if (ray_report.casting)
+        std::snprintf(text, sizeof text, "(accept : reject = %d : %d)",
+                      ray_report.good_nodes, plural - ray_report.good_nodes);
+      else
+        std::snprintf(text, sizeof text, "(%d nodes [plural %d nodes])",
+                      int(s.nodes.size()), plural);
+      DrawText(text, 16, y(i++), 20, COLOR);
+      std::snprintf(text, sizeof text, "Angle threshold ~ %.1f deg",
+                    s.angle_threshold * 180.0f / std::numbers::pi_v<float>);
+      DrawText(text, 16, y(i++), 20, COLOR);
+      DrawText("Left or right key to shift mask", 16, y(i++), 20, COLOR);
+      DrawText("Up or down key to change angle threshold", 16, y(i++), 20,
+               COLOR);
+      DrawText("R to reset", 16, y(i++), 20, COLOR);
+    }
 
     // If flight is enabled, let the particles evolve.
     if (s.fly) {
@@ -302,7 +322,6 @@ int do_main() {
       }
       s.group();
     }
-    EndMode2D();
     EndDrawing();
   }
   CloseWindow();
