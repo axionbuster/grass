@@ -7,8 +7,6 @@ add_library(dyn INTERFACE
         newton.h
         circle.h
         verlet.h
-        tree.h
-        morton.h
-        tree.h
-        tree.h)
+        barnes_hut.h
+        morton.h)
 target_include_directories(dyn INTERFACE .)

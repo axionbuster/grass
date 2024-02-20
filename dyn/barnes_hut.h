@@ -1,5 +1,5 @@
-#ifndef GRASS_TREE_H
-#define GRASS_TREE_H
+#ifndef GRASS_BARNES_HUT_H
+#define GRASS_BARNES_HUT_H
 
 #include <algorithm>
 #include <complex>
@@ -7,7 +7,7 @@
 #include <ranges>
 #include <vector>
 
-namespace dyn::tree32 {
+namespace dyn::bh32 {
 
 /// @brief A node in the Barnes-Hut tree at a given depth (span zero or more
 /// particles).
@@ -41,6 +41,6 @@ void group(I begin, I const end, auto &&get_z_masked, auto &&with_node) {
   }
 }
 
-} // namespace dyn::tree32
+} // namespace dyn::bh32
 
-#endif //GRASS_TREE_H
+#endif // GRASS_BARNES_HUT_H
