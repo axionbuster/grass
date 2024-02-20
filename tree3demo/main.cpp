@@ -9,9 +9,14 @@
 
 int constexpr N = 1000;
 
+struct Physical {
+  std::complex<float> center;
+  float radius{};
+};
+
 struct State {
   std::vector<std::complex<float>> particles;
-  std::vector<dyn::tree32::Node<decltype(particles.begin())>> nodes;
+  std::vector<dyn::tree32::Node<Physical, decltype(particles.begin())>> nodes;
   static State fresh() {
     State s;
     // Make random particles.
@@ -33,8 +38,8 @@ struct State {
         return std::optional<uint64_t>{};
     };
     auto with_node = [&s](auto node) { s.nodes.push_back(node); };
-    dyn::tree32::group(s.particles.begin(), s.particles.end(), z_masked,
-                       with_node);
+    dyn::tree32::group<Physical>(s.particles.begin(), s.particles.end(),
+                                 z_masked, with_node);
     for (auto &&n : s.nodes) {
       std::complex<float> center;
       float radius{}, count{1.0f};
@@ -42,8 +47,8 @@ struct State {
         center += (p - center) / count++;
       for (auto &&p : n)
         radius = std::max(radius, std::abs(p - center));
-      n.center = center;
-      n.radius = radius;
+      n.extra.center = center;
+      n.extra.radius = radius;
     }
     return s;
   }
@@ -82,20 +87,20 @@ int do_main() {
 
       // 2 px.
       auto radius = 2.0f / cam.zoom;
-      auto &&pp = s.particles;
-      for (auto &&p : pp)
-        DrawCircleV({p.real(), p.imag()}, radius, WHITE);
-      // Tree circles.
       for (auto &&c : s.nodes) {
-        if (c.radius) {
-          auto center = Vector2{c.center.real(), c.center.imag()};
-          auto distance = std::abs(mouse - c.center);
-          if (distance < c.radius) {
-            auto fade = 1.0f - distance / c.radius;
+        for (auto &&p : c) {
+          DrawCircleV({p.real(), p.imag()}, radius, WHITE);
+        }
+        auto &&e = c.extra;
+        if (e.radius) {
+          auto center = Vector2{e.center.real(), e.center.imag()};
+          auto distance = std::abs(mouse - e.center);
+          if (distance < e.radius) {
+            auto fade = 1.0f - distance / e.radius;
             auto color = Fade(WHITE, fade);
-            DrawCircleV(center, c.radius, color);
+            DrawCircleV(center, e.radius, color);
           }
-          DrawCircleLinesV(center, c.radius, WHITE);
+          DrawCircleLinesV(center, e.radius, WHITE);
         }
       }
     }
