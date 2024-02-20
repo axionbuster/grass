@@ -1,14 +1,21 @@
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cinttypes>
 #include <complex>
 #include <cstdio>
 #include <morton.h>
+#include <numbers>
 #include <optional>
 #include <random>
 #include <raylib.h>
 #include <tree.h>
 #include <vector>
+
+#ifdef PI
+// Raylib defines this macro.
+#undef PI
+#endif
 
 int constexpr N = 1000;
 
@@ -18,9 +25,17 @@ struct Physical {
 };
 
 struct State {
+  static constexpr auto PI = std::numbers::pi_v<float>;
+  static auto constexpr ANGLES = std::array{
+      PI / 24.0f,
+      PI / 12.0f,
+      PI / 6.0f,
+      PI / 3.0f,
+  };
   std::vector<std::complex<float>> particles;
   std::vector<dyn::tree32::Node<Physical, decltype(particles.begin())>> nodes;
   int64_t mask = 0xffff'ffff'ffff'0000;
+  float angle_threshold = std::numbers::pi_v<float> / 12.0f;
   static State fresh() {
     State s;
     // Make random particles.
@@ -74,6 +89,24 @@ struct State {
 
   void mask_right() { mask >>= 2; }
 
+  void up_angle() {
+    auto closest = std::ranges::min_element(
+        ANGLES.begin(), ANGLES.end(), {},
+        [this](auto a) { return std::abs(a - this->angle_threshold); });
+    if (closest != ANGLES.end() && ++closest != ANGLES.end()) {
+      angle_threshold = *closest;
+    }
+  }
+
+  void down_angle() {
+    auto closest = std::ranges::min_element(
+        ANGLES.rbegin(), ANGLES.rend(), {},
+        [this](auto a) { return std::abs(a - this->angle_threshold); });
+    if (closest != ANGLES.rend() && ++closest != ANGLES.rend()) {
+      angle_threshold = *closest;
+    }
+  }
+
 private:
   State() = default;
 };
@@ -105,11 +138,15 @@ int do_main() {
     if (IsKeyPressed(KEY_LEFT)) {
       s.mask_left();
       s.group();
-    }
-
-    if (IsKeyPressed(KEY_RIGHT)) {
+    } else if (IsKeyPressed(KEY_RIGHT)) {
       s.mask_right();
       s.group();
+    }
+
+    if (IsKeyPressed(KEY_UP)) {
+      s.up_angle();
+    } else if (IsKeyPressed(KEY_DOWN)) {
+      s.down_angle();
     }
 
     if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
@@ -135,19 +172,33 @@ int do_main() {
     ClearBackground(BLACK);
     {
       auto mask = std::bit_cast<uint64_t>(s.mask);
+      auto zeroes = std::countr_zero(mask);
+      // 16: offset (y; px).
+      // 24: 20 [= font size; px] + 4 [= padding; px].
+      auto line_y = [](auto i) { return 16 + 24 * i; };
+      auto i = 0;
+      auto constexpr COLOR = WHITE;
       char text[128]{};
-      std::snprintf(text, sizeof text, "Mask = 0x%" PRIx64, mask);
-      DrawText(text, 16, 16, 20, YELLOW);
+      std::snprintf(text, sizeof text, "Mask = 0x%" PRIx64 " (%d zeroes)", mask,
+                    zeroes);
+      DrawText(text, 16, line_y(i++), 20, COLOR);
       std::snprintf(text, sizeof text, "(%d nodes/groups)",
                     int(s.nodes.size()));
-      DrawText(text, 16, 40, 20, YELLOW);
-      DrawText("<Left or right key to shift mask>", 16, 64, 20, YELLOW);
+      DrawText(text, 16, line_y(i++), 20, COLOR);
+      std::snprintf(text, sizeof text, "Angle threshold ~ %.1f deg",
+                    s.angle_threshold * 180.0f / std::numbers::pi_v<float>);
+      DrawText(text, 16, line_y(i++), 20, COLOR);
+      DrawText("Left or right key to shift mask", 16, line_y(i++), 20, COLOR);
+      DrawText("Up or down key to change angle threshold", 16, line_y(i++), 20,
+               COLOR);
+      DrawText("R to reset", 16, line_y(i++), 20, COLOR);
     }
     BeginMode2D(cam);
     {
       // Mouse.
       auto [mx, my] = GetScreenToWorld2D(GetMousePosition(), cam);
       auto mouse = std::complex{mx, my};
+      auto mouse_down = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
 
       // 2 px.
       auto radius = 2.0f / cam.zoom;
@@ -158,12 +209,42 @@ int do_main() {
         if (e.radius) {
           auto center = Vector2{e.center.real(), e.center.imag()};
           auto distance = std::abs(mouse - e.center);
-          if (distance < e.radius) {
-            auto fade = 1.0f - distance / e.radius;
-            auto color = Fade(WHITE, fade);
-            DrawCircleV(center, e.radius, color);
+          if (mouse_down) {
+            if (distance < e.radius) {
+              DrawCircleLinesV(center, e.radius, GRAY);
+            } else {
+              auto rc = e.center - mouse;
+              auto rc_mag = std::abs(rc);
+              auto rad_base = std::complex{0.0f, e.radius / rc_mag};
+              auto perp_rad1 = rad_base * rc;
+              auto u_perp_rad1 = perp_rad1 + e.center;
+              auto perp_rad2 = -rad_base * rc;
+              auto u_perp_rad2 = perp_rad2 + e.center;
+              auto v_perp_rad1 =
+                  Vector2{u_perp_rad1.real(), u_perp_rad1.imag()};
+              auto v_perp_rad2 =
+                  Vector2{u_perp_rad2.real(), u_perp_rad2.imag()};
+              // [0, pi/2] (closed interval or NaN).
+              auto angle = std::atan2(e.radius, rc_mag); // y, x
+              auto good = angle < s.angle_threshold;
+              auto primary_color = good ? YELLOW : RED;
+              if (good) {
+                // NaN -> !good -> this branch not hit.
+                auto line_color = Fade(primary_color, 0.5f);
+                DrawLineV({mx, my}, v_perp_rad1, line_color);
+                DrawLineV({mx, my}, v_perp_rad2, line_color);
+              }
+              DrawCircleLinesV(center, e.radius, primary_color);
+            }
+          } else {
+            if (distance < e.radius) {
+              auto fade = 0.75f * (1.0f - distance / e.radius);
+              auto color = Fade(WHITE, fade);
+              DrawCircleV(center, e.radius, color);
+            }
+            // (anyway)
+            DrawCircleLinesV(center, e.radius, WHITE);
           }
-          DrawCircleLinesV(center, e.radius, WHITE);
         }
       }
     }
