@@ -22,23 +22,31 @@ template <std::default_initializable E, typename I> struct Node {
   I end() const { return last; }
 };
 
-/// @brief Given a Z-sorted (Morton-ordered) range, and a function to get the
-/// prefix (at an appropriate level of detail) of each particle. The center,
-/// centroid, and radius properties are not filled in (set to zero).
+/// @brief Given a Z-sorted (Morton-ordered) range and a function to get the
+/// prefix (at an appropriate level of detail) of the Morton code of each
+/// particle, construct an array of Node objects at that level of detail.
 /// @tparam E Extra data (correspond to the same parameter in struct Node).
 /// @tparam I Iterator type (correspond to the same in struct Node).
 template <typename E, typename I>
-void group(I begin, I const end, auto &&get_z_masked, auto &&with_node) {
+void group(I begin, I const end, auto &&z, auto &&node) {
   while (begin != end) {
-    auto [first, last] = std::ranges::equal_range(
-        begin, end, get_z_masked(*begin), {}, get_z_masked);
-    if (first != last) {
-      with_node(Node<E, I>{first, last, {}});
-      begin = last;
-    } else {
+    auto [first, last] = std::ranges::equal_range(begin, end, z(*begin), {}, z);
+    if (first != last)
+      node(Node<E, I>{first, last, {}}), begin = last;
+    else
       begin++;
-    }
   }
+}
+
+void dfs(auto begin, auto const end, auto &&far, auto &&react) {
+  if (begin == end)
+    return;
+  if (far(*begin))
+    return (void)react(*begin);
+  do
+    dfs(begin->node_begin(), begin->node_end(), std::forward(far),
+        std::forward(react));
+  while (++begin != end);
 }
 
 } // namespace dyn::bh32
