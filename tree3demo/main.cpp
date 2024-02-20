@@ -32,6 +32,19 @@ struct NodePhysical {
   float radius{};
 };
 
+/// @brief A node in the Barnes-Hut tree at a given depth (span zero or more
+/// particles).
+/// @tparam E Any extra data (default-constructible).
+/// @tparam I Iterator type.
+template <std::default_initializable E, typename I> struct Node {
+  I first, last;
+  E extra;
+  I begin() { return first; }
+  I begin() const { return first; }
+  I end() { return last; }
+  I end() const { return last; }
+};
+
 struct State {
   /// @brief Number of particles.
   static auto constexpr N = 1000;
@@ -40,7 +53,7 @@ struct State {
       PI / 24.0f, PI / 16.0f, PI / 12.0f, PI / 6.0f, PI / 3.0f,
   };
   std::vector<Particle> particles;
-  std::vector<dyn::bh32::Node<NodePhysical, decltype(particles.begin())>> nodes;
+  std::vector<Node<NodePhysical, decltype(particles.begin())>> nodes;
   int64_t mask = 0xffff'ffff'ffff'0000;
   float angle_threshold = PI / 12.0f;
   bool fly{};
@@ -74,9 +87,10 @@ struct State {
       else
         return std::optional<uint64_t>{};
     };
-    auto with_node = [this](auto node) { nodes.push_back(node); };
-    dyn::bh32::group<NodePhysical>(particles.begin(), particles.end(), z_masked,
-                                   with_node);
+    auto with_node = [this](auto first, auto last) {
+      nodes.push_back({first, last, {}});
+    };
+    dyn::bh32::group(particles.begin(), particles.end(), z_masked, with_node);
     // Assign the extra data (center and radius).
     for (auto &&n : nodes) {
       std::complex<float> center;
