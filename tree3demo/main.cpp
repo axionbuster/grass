@@ -19,44 +19,55 @@
 #undef PI
 #endif
 
-/// @brief Number of particles.
-int constexpr N = 1000;
+struct Particle {
+  std::complex<float> xy, v;
+  static std::optional<uint64_t> morton(Particle const &n) {
+    // 512 = "precision"
+    return dyn::fixedmorton32<512>(n.xy);
+  }
+};
 
-struct Physical {
+struct NodePhysical {
   std::complex<float> center;
   float radius{};
 };
 
 struct State {
+  /// @brief Number of particles.
+  static auto constexpr N = 1000;
   static auto constexpr PI = std::numbers::pi_v<float>;
   static auto constexpr ANGLES = std::array{
       PI / 24.0f, PI / 16.0f, PI / 12.0f, PI / 6.0f, PI / 3.0f,
   };
-  std::vector<std::complex<float>> particles;
-  std::vector<dyn::bh32::Node<Physical, decltype(particles.begin())>> nodes;
+  std::vector<Particle> particles;
+  std::vector<dyn::bh32::Node<NodePhysical, decltype(particles.begin())>> nodes;
   int64_t mask = 0xffff'ffff'ffff'0000;
   float angle_threshold = PI / 12.0f;
+  bool fly{};
   static State fresh() {
     State s;
     // Make random particles.
     std::mt19937 rng(std::random_device{}());
-    std::normal_distribution<float> dist;
+    // mean, stddev
+    std::normal_distribution<float> xy_dist{0.0f, 0.5f}, v_dist{0.0f, 0.25f};
     s.particles.reserve(N);
     for (int i = 0; i < N; i++)
-      s.particles.emplace_back(dist(rng), dist(rng));
-    // Sort by morton.
-    std::ranges::sort(s.particles.begin(), s.particles.end(), {},
-                      dyn::fixedmorton32<512>);
+      s.particles.emplace_back(std::complex{xy_dist(rng), xy_dist(rng)},
+                               std::complex{v_dist(rng), v_dist(rng)});
     // [! highlight !] Make the circles.
     s.group();
     return s;
   }
 
+  /// @brief Create the groups (the circles seen).
   void group() {
     nodes = {};
+    // Sort by morton.
+    std::ranges::sort(particles.begin(), particles.end(), {}, Particle::morton);
     // Compute groups/nodes.
     auto m = std::bit_cast<uint64_t>(mask);
-    auto z_masked = [m](auto xy) {
+    auto z_masked = [m](auto p) {
+      auto xy = p.xy;
       auto z = dyn::fixedmorton32<512>(xy);
       if (z.has_value())
         return std::optional<uint64_t>{z.value() & m};
@@ -64,18 +75,18 @@ struct State {
         return std::optional<uint64_t>{};
     };
     auto with_node = [this](auto node) { nodes.push_back(node); };
-    dyn::bh32::group<Physical>(particles.begin(), particles.end(), z_masked,
-                               with_node);
+    dyn::bh32::group<NodePhysical>(particles.begin(), particles.end(), z_masked,
+                                   with_node);
     // Assign the extra data (center and radius).
     for (auto &&n : nodes) {
       std::complex<float> center;
       float radius{}, count{};
       for (auto &&p : n)
         // Welford's online mean algorithm; compute center.
-        center += (p - center) / ++count;
+        center += (p.xy - center) / ++count;
       for (auto &&p : n)
         // Compute radius.
-        radius = std::max(radius, std::abs(p - center));
+        radius = std::max(radius, std::abs(p.xy - center));
       n.extra.center = center;
       n.extra.radius = radius;
     }
@@ -84,36 +95,23 @@ struct State {
   // Each quadrant requires two bits.
 
   void mask_left() {
-    if (!(mask <<= 2)) {
+    if (!(mask <<= 2))
       mask = 0xc000'0000'0000'0000;
-    };
   }
 
   void mask_right() { mask >>= 2; }
-
-  void up_angle() {
-    // Argument-minimize the difference.
-    //  -> Find the closest angle in list to `angle_threshold`.
-    // Then, go to neighbor in designated direction.
-    auto closest = std::ranges::min_element(
-        ANGLES.begin(), ANGLES.end(), {},
-        [this](auto a) { return std::abs(a - angle_threshold); });
-    if (closest != ANGLES.end() && ++closest != ANGLES.end()) {
-      angle_threshold = *closest;
-    }
-  }
-
-  void down_angle() {
-    auto closest = std::ranges::min_element(
-        ANGLES.rbegin(), ANGLES.rend(), {},
-        [this](auto a) { return std::abs(a - angle_threshold); });
-    if (closest != ANGLES.rend() && ++closest != ANGLES.rend()) {
-      angle_threshold = *closest;
-    }
-  }
+  void up_angle() { angle_next(ANGLES.begin(), ANGLES.end()); }
+  void down_angle() { angle_next(ANGLES.rbegin(), ANGLES.rend()); }
 
 private:
   State() = default;
+  void angle_next(auto const begin, auto const end) {
+    // Find the angle closest to `angle_threshold` in the list [begin, end).
+    auto difference = [this](auto a) { return std::abs(a - angle_threshold); };
+    auto closest = std::ranges::min_element(begin, end, {}, difference);
+    if (closest != end && ++closest != end)
+      angle_threshold = *closest;
+  }
 };
 
 int do_main() {
@@ -134,6 +132,8 @@ int do_main() {
   }
 
   while (!WindowShouldClose()) {
+    auto dt = 1.0f / std::max(float(GetFPS()), 40.0f);
+
     // Reset (R)
     if (IsKeyPressed(KEY_R)) {
       s = State::fresh();
@@ -166,6 +166,10 @@ int do_main() {
       auto x = w - v / cam.zoom;
       cam.target = {x.real(), x.imag()};
     }
+
+    // Allow particles to fly or stop the particles (Space).
+    if (IsKeyPressed(KEY_SPACE))
+      s.fly = !s.fly;
 
     // Zoom (mouse wheel)
     if (auto wheel = GetMouseWheelMove()) {
@@ -221,8 +225,10 @@ int do_main() {
       // Each node spans a range of particles.
       for (auto &&node : s.nodes) {
         // Draw the particles in the range.
-        for (auto &&p : node)
-          DrawCircleV({p.real(), p.imag()}, radius, WHITE);
+        for (auto &&p : node) {
+          auto &&xy = p.xy;
+          DrawCircleV({xy.real(), xy.imag()}, radius, WHITE);
+        }
 
         // Inspect the extra data (e).
         //  --> The circles.
@@ -239,6 +245,16 @@ int do_main() {
               // Accept or reject? Approximate view angle by perpendicular
               // construction of the radius from the circle's center. Always
               // under-approximates true view angle (but is good).
+              //
+              // Nota bene:
+              //
+              // Let x, y, x0, y0, and m be complex numbers (m != 0). Let x
+              // and y be variables. Then, the equation
+              //
+              //  y - y0 = m * (x - x0)
+              //
+              // models a general transformation between x and y involving
+              // scaling (zoom), rotation (spin), and translation (pan).
 
               auto rc = e.center - mouse;
               auto rc_mag = std::abs(rc);
@@ -276,6 +292,15 @@ int do_main() {
           }
         }
       }
+    }
+
+    // If flight is enabled, let the particles evolve.
+    if (s.fly) {
+      for (auto &&p : s.particles) {
+        auto &&xy = p.xy;
+        xy += p.v * dt;
+      }
+      s.group();
     }
     EndMode2D();
     EndDrawing();
