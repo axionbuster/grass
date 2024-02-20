@@ -1,5 +1,8 @@
 #include <algorithm>
+#include <bit>
+#include <cinttypes>
 #include <complex>
+#include <cstdio>
 #include <morton.h>
 #include <optional>
 #include <random>
@@ -17,6 +20,7 @@ struct Physical {
 struct State {
   std::vector<std::complex<float>> particles;
   std::vector<dyn::tree32::Node<Physical, decltype(particles.begin())>> nodes;
+  int64_t mask = 0xffff'ffff'ffff'0000;
   static State fresh() {
     State s;
     // Make random particles.
@@ -28,30 +32,47 @@ struct State {
     // Sort by morton.
     std::ranges::sort(s.particles.begin(), s.particles.end(), {},
                       dyn::fixedmorton32<512>);
+    s.group();
+    return s;
+  }
+
+  void group() {
+    nodes = {};
     // Compute groups/nodes.
-    uint64_t constexpr MASK = 0xffff'ffff'ffff'0000;
-    auto z_masked = [MASK](auto xy) {
+    auto m = std::bit_cast<uint64_t>(mask);
+    auto z_masked = [m](auto xy) {
       auto z = dyn::fixedmorton32<512>(xy);
       if (z.has_value())
-        return std::optional<uint64_t>{z.value() & MASK};
+        return std::optional<uint64_t>{z.value() & m};
       else
         return std::optional<uint64_t>{};
     };
-    auto with_node = [&s](auto node) { s.nodes.push_back(node); };
-    dyn::tree32::group<Physical>(s.particles.begin(), s.particles.end(),
-                                 z_masked, with_node);
-    for (auto &&n : s.nodes) {
+    auto with_node = [this](auto node) { nodes.push_back(node); };
+    dyn::tree32::group<Physical>(particles.begin(), particles.end(), z_masked,
+                                 with_node);
+    // Assign the extra data.
+    for (auto &&n : nodes) {
       std::complex<float> center;
-      float radius{}, count{1.0f};
+      float radius{}, count{};
       for (auto &&p : n)
-        center += (p - center) / count++;
+        // Welford's online mean.
+        center += (p - center) / ++count;
       for (auto &&p : n)
         radius = std::max(radius, std::abs(p - center));
       n.extra.center = center;
       n.extra.radius = radius;
     }
-    return s;
   }
+
+  // Each quadrant requires two bits.
+
+  void mask_left() {
+    if (!(mask <<= 2)) {
+      mask = 0xc000'0000'0000'0000;
+    };
+  }
+
+  void mask_right() { mask >>= 2; }
 
 private:
   State() = default;
@@ -77,8 +98,28 @@ int do_main() {
       continue;
     }
 
+    if (IsKeyPressed(KEY_LEFT)) {
+      s.mask_left();
+      s.group();
+    }
+
+    if (IsKeyPressed(KEY_RIGHT)) {
+      s.mask_right();
+      s.group();
+    }
+
     BeginDrawing();
     ClearBackground(BLACK);
+    {
+      auto mask = std::bit_cast<uint64_t>(s.mask);
+      char text[128]{};
+      std::snprintf(text, sizeof text, "Mask = 0x%" PRIx64, mask);
+      DrawText(text, 16, 16, 20, YELLOW);
+      std::snprintf(text, sizeof text, "(%d nodes/groups)",
+                    int(s.nodes.size()));
+      DrawText(text, 16, 40, 20, YELLOW);
+      DrawText("<Left or right key to shift mask>", 16, 64, 20, YELLOW);
+    }
     BeginMode2D(cam);
     {
       // Mouse.
@@ -88,9 +129,8 @@ int do_main() {
       // 2 px.
       auto radius = 2.0f / cam.zoom;
       for (auto &&c : s.nodes) {
-        for (auto &&p : c) {
+        for (auto &&p : c)
           DrawCircleV({p.real(), p.imag()}, radius, WHITE);
-        }
         auto &&e = c.extra;
         if (e.radius) {
           auto center = Vector2{e.center.real(), e.center.imag()};
