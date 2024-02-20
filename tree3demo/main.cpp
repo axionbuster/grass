@@ -79,15 +79,19 @@ private:
 };
 
 int do_main() {
+  SetConfigFlags(FLAG_WINDOW_RESIZABLE);
   InitWindow(600, 600, "A");
-  SetTargetFPS(15);
+  SetTargetFPS(60);
   auto s = State::fresh();
   Camera2D cam{};
+  float shortest_zoom;
   {
+    // Do once at startup.
     auto w = float(GetScreenWidth()), h = float(GetScreenHeight()),
          z = std::min(w, h);
     cam.offset = {w * 0.5f, h * 0.5f};
     cam.zoom = 0.25f * z;
+    shortest_zoom = cam.zoom;
   }
 
   while (!WindowShouldClose()) {
@@ -106,6 +110,25 @@ int do_main() {
     if (IsKeyPressed(KEY_RIGHT)) {
       s.mask_right();
       s.group();
+    }
+
+    if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
+      auto u = GetMouseDelta();
+      auto v = std::complex{u.x, u.y};
+      auto w = std::complex{cam.target.x, cam.target.y};
+      auto x = w - v / cam.zoom;
+      cam.target = {x.real(), x.imag()};
+    }
+
+    if (auto wheel = GetMouseWheelMove()) {
+      auto u = GetMousePosition();
+      auto v = GetScreenToWorld2D(u, cam);
+      cam.offset = u;
+      cam.target = v;
+      auto constexpr ZOOM_INCR = 5.0f;
+      cam.zoom += wheel * ZOOM_INCR;
+      cam.zoom = std::max(cam.zoom, 0.25f * shortest_zoom);
+      cam.zoom = std::min(cam.zoom, 10.0f * shortest_zoom);
     }
 
     BeginDrawing();
