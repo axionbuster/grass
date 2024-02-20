@@ -39,14 +39,14 @@ void group(I begin, I const end, auto &&z, auto &&node) {
 }
 
 void dfs(auto begin, auto const end, auto &&far, auto &&react) {
-  if (begin == end)
-    return;
-  if (far(*begin))
-    return (void)react(*begin);
-  do
-    dfs(begin->node_begin(), begin->node_end(), std::forward(far),
-        std::forward(react));
-  while (++begin != end);
+  if (begin != end)
+    do
+      if (far(*begin))
+        react(*begin);
+      else
+        dfs(begin->node_begin(), begin->node_end(), std::forward(far),
+            std::forward(react));
+    while (++begin != end);
 }
 
 } // namespace dyn::bh32
