@@ -50,7 +50,7 @@ template <typename I> struct Group {
 
 struct State {
   std::list<Particle> particles;
-  uint64_t mask = 0xffff'ffff'0000'0000;
+  uint64_t mask = 0xc000'0000'0000'0000;
   [[maybe_unused]] void shift_left() {
     mask = (mask <<= 2) ? mask : 0xc000'0000'0000'0000;
   }
@@ -65,7 +65,7 @@ struct State {
         [&morton](auto &&a, auto &&b) { return morton(a) < morton(b); });
   }
 
-  static State fresh(int N = 500) {
+  static State fresh(int N = 10'000) {
     decltype(particles) ps;
     std::mt19937 r(1234);
     std::normal_distribution<float> z;
@@ -150,9 +150,10 @@ struct User {
   }
 
   void hud(int n_particles) {
+    DrawFPS(16, 16);
     char msg[256]{};
     snprintf(msg, sizeof msg, "%d particles", n_particles);
-    DrawText(msg, 16, 16, 16, WHITE);
+    DrawText(msg, 16, 40, 20, WHITE);
   }
 
   void adjust_fly() {
@@ -188,7 +189,7 @@ static int do_main() {
       auto [mx, my] = GetMousePosition();
       auto v_mouse = GetScreenToWorld2D({mx, my}, u.cam);
       auto w_mouse = std::complex{v_mouse.x, v_mouse.y};
-      auto tan_angle_threshold = 0.087489; // tan (5 deg).
+      auto tan_angle_threshold = 0.176327f; // tan (10 deg).
       for (decltype(s.groups()) groups; !(groups = s.groups()).empty();
            s.shift_right()) {
         auto process = [&u, w_mouse, tan_angle_threshold](auto &&g) {
