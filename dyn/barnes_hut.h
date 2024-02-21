@@ -32,13 +32,12 @@ enum {
 /// @param g_rend Group iterator end (reverse).
 /// @param process Process a group and decide whether to keep its particles
 /// (KEEP) or remove them (REMOVE).
-/// @param p_remove_range Remove a non-empty range of particles.
+/// @param remove Remove all particles in this group.
 void run_level(auto g_rbegin, auto const g_rend, auto &&process,
-               auto &&p_remove_range) {
-  if (g_rbegin != g_rend)
-    for (auto g = g_rbegin; g != g_rend; g++)
-      if (process(*g) == REMOVE)
-        p_remove_range(g->begin(), g->end());
+               auto &&remove) {
+  while (g_rbegin != g_rend)
+    if (auto g = g_rbegin; process(*g_rbegin++) == REMOVE)
+      remove(*g);
 
   // Original from Notes:
 
