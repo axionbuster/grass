@@ -28,6 +28,7 @@ add_subdirectory(demo)
 add_subdirectory(dyn)
 add_subdirectory(quadrantdemo)
 add_subdirectory(tree3demo)
+add_subdirectory(hierarchydemo)
 
 include(CTest)
 if (BUILD_TESTING)

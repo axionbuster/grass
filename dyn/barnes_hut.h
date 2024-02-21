@@ -19,9 +19,10 @@ void group(auto begin, auto const end, auto &&z, auto &&grp) {
 }
 
 // Used by `run_level`.
-enum {
+enum class Test {
   /// @brief Keep the particles under this group.
   KEEP [[maybe_unused]],
+
   /// @brief Remove the particles under this group.
   REMOVE,
 };
@@ -36,13 +37,13 @@ enum {
 void run_level(auto g_rbegin, auto const g_rend, auto &&process,
                auto &&remove) {
   while (g_rbegin != g_rend)
-    if (auto g = g_rbegin++; process(*g) == REMOVE)
+    if (auto g = g_rbegin++; process(*g) == Test::REMOVE)
       remove(*g);
 
   // Original from Notes:
 
   // Check for stopping conditions (no next level, no particles).
-  //  "no next level" -> Done.
+  //  "no next level" -> N/A.
   //  "no particles" -> N/A.
   // Build the group buffer, applying the mask. -> N/A.
   // Process from right to left, mark for removal as needed. -> Done.
