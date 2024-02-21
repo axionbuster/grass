@@ -5,6 +5,7 @@
 #include <barnes_hut.h>
 #include <bit>
 #include <cinttypes>
+#include <cmath>
 #include <complex>
 #include <cstdio>
 #include <morton.h>
@@ -216,31 +217,36 @@ int do_main() {
       auto mouse_down = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
       ray_report.casting = mouse_down;
 
-      // 2 px.
-      auto radius = 2.0f / cam.zoom;
+      // The tangent of the angle threshold.
+      auto tan_angle_threshold = std::tan(s.angle_threshold);
 
       // Each node spans a range of particles.
       for (auto &&node : s.nodes) {
         // Draw the particles in the range.
         for (auto &&p : node) {
           auto &&xy = p.xy;
+          auto radius = 2.0f / cam.zoom; // 2 px.
           DrawCircleV({xy.real(), xy.imag()}, radius, WHITE);
         }
 
         // Inspect the extra data (e).
         //  --> The circles.
         auto &&e = node.extra;
-        if (e.radius) {
-          auto center = Vector2{e.center.real(), e.center.imag()};
-          auto distance = std::abs(mouse - e.center);
+        if (auto radius = e.radius) {
+          auto center = e.center;
+          auto v_center = Vector2{center.real(), center.imag()};
+          auto displacement = center - mouse;
+          auto distance = std::abs(displacement);
           if (mouse_down) {
             // Angle rejection visualization (left mouse).
-            if (distance < e.radius) {
-              DrawCircleLinesV(center, e.radius, GRAY);
+            if (distance < radius) {
+              DrawCircleLinesV(v_center, radius, GRAY);
             } else {
               // Mouse outside the circle.
-              // Accept or reject? Approximate view angle by perpendicular
-              // construction of the radius from the circle's center. Always
+              //
+              // Accept or reject? Approximate view angle by construction of
+              // the endpoints of two radii perpendicular to the line of sight
+              // from the mouse to the circle's center. Always
               // under-approximates true view angle (but is good).
               //
               // Nota bene:
@@ -253,40 +259,61 @@ int do_main() {
               // models a general transformation between x and y involving
               // scaling (zoom), rotation (spin), and translation (pan).
 
-              auto rc = e.center - mouse;
-              auto rc_mag = std::abs(rc);
-              auto rad_base = std::complex{0.0f, e.radius / rc_mag};
-              auto perp_rad1 = rad_base * rc;
-              auto u_perp_rad1 = perp_rad1 + e.center;
-              auto perp_rad2 = -rad_base * rc;
-              auto u_perp_rad2 = perp_rad2 + e.center;
-              auto v_perp_rad1 =
-                  Vector2{u_perp_rad1.real(), u_perp_rad1.imag()};
-              auto v_perp_rad2 =
-                  Vector2{u_perp_rad2.real(), u_perp_rad2.imag()};
-              auto angle = 2.0f * std::atan2(e.radius, rc_mag);
-              auto good = angle < s.angle_threshold;
+              // See the definition of the tangent:
+              //  Suppose a line and a unit circle intersect exactly once. The
+              //  line would therefore be called a tangent line of the circle.
+              //  Now, exactly one radius of the circle intersects the tangent
+              //  line. Then, draw any diameter of the circle and extend it on
+              //  both sides to infinity. Suppose the extended line of the
+              //  diameter intersects the tangent line. Then, a right triangle
+              //  is formed between the radius, the tangent line, and the
+              //  diameter line. The length of the triangle's side that lies on
+              //  the tangent line is called the tangent (tan) of the angle (A)
+              //  between the radius and the diameter line. (Let's call A the
+              //  "central angle" from now on because A is formed at the center
+              //  of the circle.) Notice: `tan A` is called "tangent" because it
+              //  is tangent to the circle! Similarly, the diameter, when
+              //  extended on both sides, would intersect the circle twice: it
+              //  is a secant line. Among the sides of the right triangle,
+              //  excluding the radius, only the hypotenuse is secant to the
+              //  circle (when extended; this fact is best understood by drawing
+              //  the figure). Hence, the hypotenuse of this triangle is called
+              //  the secant (sec) of the central angle (A). Noticing that this
+              //  right triangle has "1" and "tan A" as the legs and "sec A" as
+              //  the hypoteneuse, by an elementary application of the
+              //  Pythagorean theorem, it is seen that:
+              //
+              //    1 + tan^2 A = sec^2 A.
+              //
+              //  Hope this helps.
+              auto tangent = e.radius / distance;
+              auto c_tangent = std::complex{1.0f, tangent};
+
+              auto rotate = displacement;
+              auto pan = mouse;
+              // Construct the radial endpoints perpendicular to displacement.
+              auto r0 = c_tangent * rotate + pan;
+              auto r1 = std::conj(c_tangent) * rotate + pan;
+              auto good = tangent < tan_angle_threshold;
               auto primary_color = good ? YELLOW : RED;
-              DrawCircleLinesV(center, e.radius, primary_color);
+              DrawCircleLinesV(v_center, radius, primary_color);
               if (good) {
                 // NaN -> !good -> this branch not hit.
-
                 ray_report.good_nodes++;
-
                 // Cast rays.
                 auto line_color = Fade(primary_color, 0.5f);
-                DrawLineV({mx, my}, v_perp_rad1, line_color);
-                DrawLineV({mx, my}, v_perp_rad2, line_color);
+                DrawLineV({mx, my}, {r0.real(), r0.imag()}, line_color);
+                DrawLineV({mx, my}, {r1.real(), r1.imag()}, line_color);
               }
             }
           } else {
             // Ordinary view (no left mouse).
-            DrawCircleLinesV(center, e.radius, WHITE);
+            DrawCircleLinesV(v_center, e.radius, WHITE);
             if (distance < e.radius) {
               // On mouse hover, fill circle with gray.
               auto fade = 0.75f * (1.0f - distance / e.radius);
               auto color = Fade(WHITE, fade);
-              DrawCircleV(center, e.radius, color);
+              DrawCircleV(v_center, e.radius, color);
             }
           }
         }
