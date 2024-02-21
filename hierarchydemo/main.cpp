@@ -1,10 +1,10 @@
-#include <algorithm>
 #include <barnes_hut.h>
 #include <bit>
 #include <cmath>
 #include <complex>
 #include <cstdint>
 #include <cstdio>
+#include <list>
 #include <morton.h>
 #include <optional>
 #include <random>
@@ -34,6 +34,8 @@ struct Particle {
   }
 };
 
+enum class Test { KEEP, REMOVE };
+
 template <typename I> struct Group {
   I first, last;
   std::complex<float> xy;
@@ -47,7 +49,7 @@ template <typename I> struct Group {
 };
 
 struct State {
-  std::vector<Particle> particles;
+  std::list<Particle> particles;
   uint64_t mask = 0xffff'ffff'0000'0000;
   [[maybe_unused]] void shift_left() {
     mask = (mask <<= 2) ? mask : 0xc000'0000'0000'0000;
@@ -59,7 +61,8 @@ struct State {
 
   void sort() {
     auto morton = [](Particle const &p) { return Particle::morton(p); };
-    std::ranges::sort(particles.begin(), particles.end(), {}, morton);
+    particles.sort(
+        [&morton](auto &&a, auto &&b) { return morton(a) < morton(b); });
   }
 
   static State fresh(int N = 500) {
@@ -73,7 +76,7 @@ struct State {
     return s;
   }
 
-  std::vector<Group<std::vector<Particle>::iterator>> groups() {
+  std::vector<Group<std::list<Particle>::iterator>> groups() {
     if (mask == uint64_t(-1) || particles.empty())
       return {};
 
@@ -188,7 +191,6 @@ static int do_main() {
       auto tan_angle_threshold = 0.087489; // tan (5 deg).
       for (decltype(s.groups()) groups; !(groups = s.groups()).empty();
            s.shift_right()) {
-        using Test = dyn::bh32::Test;
         auto process = [&u, w_mouse, tan_angle_threshold](auto &&g) {
           if (!g.radius) {
             draw_particle(g.xy, WHITE, u.cam.zoom);
@@ -206,8 +208,9 @@ static int do_main() {
           DrawCircleLinesV({g.xy.real(), g.xy.imag()}, g.radius, GRAY);
           return Test::KEEP;
         };
-        auto remove = [&s](auto &&g) { s.particles.erase(g.first, g.last); };
-        dyn::bh32::run_level(groups.rbegin(), groups.rend(), process, remove);
+        for (auto &&g : groups)
+          if (process(g) == Test::REMOVE)
+            s.particles.erase(g.begin(), g.end());
       }
     }
     EndMode2D();
