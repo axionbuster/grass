@@ -1,10 +1,10 @@
 #include <algorithm>
 #include <barnes_hut.h>
 #include <bit>
-#include <circle.h>
 #include <cmath>
 #include <complex>
 #include <cstdint>
+#include <cstdio>
 #include <morton.h>
 #include <optional>
 #include <random>
@@ -12,26 +12,23 @@
 #include <vector>
 
 struct Particle {
-  std::complex<float> xy;
+  std::complex<float> xy, v;
 
   Particle() = default;
-  Particle(float x, float y) : xy{x, y} {}
+  Particle(float x, float y, float vx, float vy) : xy{x, y}, v{vx, vy} {}
 
   static std::optional<uint64_t> morton(std::complex<float> p) {
     return dyn::fixedmorton32(p);
   }
-
   static std::optional<uint64_t> morton(Particle const &p) {
     return morton(p.xy);
   }
-
   static std::optional<uint64_t> morton(std::complex<float> p, uint64_t mask) {
     if (auto z = morton(p); z.has_value())
       return z.value() & mask;
     else
       return {};
   }
-
   static std::optional<uint64_t> morton(Particle const &p, uint64_t mask) {
     return morton(p.xy, mask);
   }
@@ -43,40 +40,67 @@ template <typename I> struct Group {
   float radius{};
   Group() = default;
   Group(I first, I last) : first(first), last(last) {}
+  I begin() { return first; }
+  I end() { return last; }
+  I begin() const { return first; }
+  I end() const { return last; }
 };
 
 struct State {
   std::vector<Particle> particles;
-  uint64_t mask = 0xffff'ffff'ffff'0000;
-  void shift_left() { mask = (mask <<= 2) ? mask : 0xc000'0000'0000'0000; }
+  uint64_t mask = 0xffff'ffff'0000'0000;
+  [[maybe_unused]] void shift_left() {
+    mask = (mask <<= 2) ? mask : 0xc000'0000'0000'0000;
+  }
   void shift_right() {
-    // Right shift on signed integers was undefined until C++20.
-    // Since C++20, it's defined as an arithmetic (zero-extending) right shift.
     auto m = std::bit_cast<int64_t>(mask);
     mask = std::bit_cast<uint64_t>(m >> 2);
   }
-  static State fresh() {
+
+  void sort() {
+    auto morton = [](Particle const &p) { return Particle::morton(p); };
+    std::ranges::sort(particles.begin(), particles.end(), {}, morton);
+  }
+
+  static State fresh(int N = 500) {
     decltype(particles) ps;
-    auto constexpr N = 1'000;
     std::mt19937 r(1234);
     std::normal_distribution<float> z;
     for (auto i = 0; i < N; i++)
-      ps.emplace_back(z(r), z(r));
-    auto morton = [](Particle const &p) { return Particle::morton(p); };
-    std::ranges::sort(ps.begin(), ps.end(), {}, morton);
-    return {ps};
+      ps.emplace_back(z(r), z(r), z(r), z(r));
+    State s{ps};
+    s.sort();
+    return s;
   }
 
   std::vector<Group<std::vector<Particle>::iterator>> groups() {
-    if (mask + 1 == 0 || particles.empty())
+    if (mask == uint64_t(-1) || particles.empty())
       return {};
 
     decltype(groups()) r;
     auto m = mask;
     auto z = [m](auto &&p) { return Particle::morton(p, m); };
-    auto g = [&r](auto f, auto l) { r.push_back({f, l}); };
-    dyn::bh32::group(particles.begin(), particles.end(), z, g);
+    auto grp = [&r](auto f, auto l) { r.push_back({f, l}); };
+    dyn::bh32::group(particles.begin(), particles.end(), z, grp);
+
+    // Position, radius.
+    for (auto &&g : r) {
+      // Welford's online mean algorithm: compute mean xy for all particles
+      // (p) in the group (g).
+      float n{};
+      for (auto &&p : g)
+        g.xy += (p.xy - g.xy) / ++n;
+      // Compute min radius to contain all particles (p).
+      for (auto &&p : g)
+        g.radius = std::max(g.radius, std::abs(p.xy - g.xy));
+    }
     return r;
+  }
+
+  void fly(float dt) {
+    for (auto &&p : particles)
+      p.xy += dt * p.v;
+    sort();
   }
 
 private:
@@ -85,18 +109,57 @@ private:
 };
 
 struct User {
-  Camera2D cam;
+  Camera2D cam{};
+  float zoom0{};
+  struct {
+    bool fly : 1 {};
+  } flag{};
 
   User() {
     auto w = float(GetScreenWidth()), h = float(GetScreenHeight()),
          z = std::min(w, h);
     cam.offset = {w * 0.5f, h * 0.5f};
     cam.zoom = 0.25f * z;
+    zoom0 = cam.zoom;
+  }
+
+  void pan() {
+    if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
+      auto u = GetMouseDelta();
+      auto v = std::complex{u.x, u.y};
+      auto w = std::complex{cam.target.x, cam.target.y};
+      auto x = w - v / cam.zoom;
+      cam.target = {x.real(), x.imag()};
+    }
+  }
+
+  void zoom() {
+    if (auto wheel = GetMouseWheelMove()) {
+      auto u = GetMousePosition();
+      auto v = GetScreenToWorld2D(u, cam);
+      cam.offset = u;
+      cam.target = v;
+      auto constexpr ZOOM_INCR = 5.0f;
+      cam.zoom += wheel * ZOOM_INCR;
+      cam.zoom = std::max(cam.zoom, 0.25f * zoom0);
+      cam.zoom = std::min(cam.zoom, 10.0f * zoom0);
+    }
+  }
+
+  void hud(int n_particles) {
+    char msg[256]{};
+    snprintf(msg, sizeof msg, "%d particles", n_particles);
+    DrawText(msg, 16, 16, 16, WHITE);
+  }
+
+  void adjust_fly() {
+    if (IsKeyPressed(KEY_SPACE))
+      flag.fly = !flag.fly;
   }
 };
 
-static void draw_particle(auto &&p, auto color, auto &&cam) {
-  auto radius = 2.0f / cam.zoom;
+static void draw_particle(auto &&p, auto color, auto zoom) {
+  auto radius = 2.0f / zoom;
   DrawCircleV({p.real(), p.imag()}, radius, color);
 }
 
@@ -109,42 +172,42 @@ static int do_main() {
   while (!WindowShouldClose()) {
     BeginDrawing();
     ClearBackground(BLACK);
+    u.hud(int(state.particles.size()));
     BeginMode2D(u.cam);
     {
+      u.pan(), u.zoom();
+      if (u.adjust_fly(), u.flag.fly)
+        // dt (Hz)
+        state.fly(1.0f / 60.0f);
+
+      // I'll explain everything soon when I get the time to work on this again.
       auto s = state;
-
-      if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-        auto [mx, my] = GetMousePosition();
-        auto v_mouse = GetScreenToWorld2D({mx, my}, u.cam);
-        auto w_mouse = std::complex{v_mouse.x, v_mouse.y};
-        auto tan_angle_threshold = 0.1763270f; // tan (10 deg).
-        for (auto groups = s.groups(); !groups.empty();) {
-          auto process = [&u, w_mouse, tan_angle_threshold](auto &&g) {
-            using Test = dyn::bh32::Test;
-
-            if (!g.radius) {
-              draw_particle(g.xy, WHITE, u.cam);
-              return Test::REMOVE;
-            }
-
-            auto disp = g.xy - w_mouse;
-            auto dist = std::abs(disp);
-            if (dist < g.radius)
-              goto keep;
-            if (auto tan = g.radius / dist; tan_angle_threshold < tan)
-              goto keep;
-
-            DrawCircleLinesV({g.xy.real(), g.xy.imag()}, g.radius, YELLOW);
+      auto [mx, my] = GetMousePosition();
+      auto v_mouse = GetScreenToWorld2D({mx, my}, u.cam);
+      auto w_mouse = std::complex{v_mouse.x, v_mouse.y};
+      auto tan_angle_threshold = 0.087489; // tan (5 deg).
+      for (decltype(s.groups()) groups; !(groups = s.groups()).empty();
+           s.shift_right()) {
+        using Test = dyn::bh32::Test;
+        auto process = [&u, w_mouse, tan_angle_threshold](auto &&g) {
+          if (!g.radius) {
+            draw_particle(g.xy, WHITE, u.cam.zoom);
             return Test::REMOVE;
-
-          keep:
-            DrawCircleLinesV({g.xy.real(), g.xy.imag()}, g.radius, GRAY);
-            return Test::KEEP;
-          };
-          auto remove = [&s](auto &&g) { s.particles.erase(g.first, g.last); };
-          dyn::bh32::run_level(groups.rbegin(), groups.rend(), process, remove);
-          s.shift_right();
-        }
+          }
+          auto disp = g.xy - w_mouse;
+          auto dist = std::abs(disp);
+          if (dist < g.radius)
+            goto keep;
+          if (auto tan = g.radius / dist; tan_angle_threshold < tan)
+            goto keep;
+          DrawCircleLinesV({g.xy.real(), g.xy.imag()}, g.radius, YELLOW);
+          return Test::REMOVE;
+        keep:
+          DrawCircleLinesV({g.xy.real(), g.xy.imag()}, g.radius, GRAY);
+          return Test::KEEP;
+        };
+        auto remove = [&s](auto &&g) { s.particles.erase(g.first, g.last); };
+        dyn::bh32::run_level(groups.rbegin(), groups.rend(), process, remove);
       }
     }
     EndMode2D();
