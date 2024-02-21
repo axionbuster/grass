@@ -36,9 +36,9 @@ enum {
 void run_level(auto g_rbegin, auto const g_rend, auto &&process,
                auto &&p_remove_range) {
   if (g_rbegin != g_rend)
-    for (auto i = g_rbegin; i != g_rend; i++)
-      if (process(*i) == REMOVE)
-        p_remove_range(i->begin(), i->end());
+    for (auto g = g_rbegin; g != g_rend; g++)
+      if (process(*g) == REMOVE)
+        p_remove_range(g->begin(), g->end());
 
   // Original from Notes:
 
