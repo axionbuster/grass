@@ -36,7 +36,7 @@ enum {
 void run_level(auto g_rbegin, auto const g_rend, auto &&process,
                auto &&remove) {
   while (g_rbegin != g_rend)
-    if (auto g = g_rbegin; process(*g_rbegin++) == REMOVE)
+    if (auto g = g_rbegin++; process(*g) == REMOVE)
       remove(*g);
 
   // Original from Notes:
