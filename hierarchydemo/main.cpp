@@ -58,7 +58,7 @@ template <typename I> struct Group {
 
 struct State {
   /// A list of particles.
-  std::list<Particle> particles;
+  std::vector<Particle> particles;
   uint64_t mask = 0xffff'ffff'0000'0000;
   [[maybe_unused]] void shift_left() {
     mask = (mask <<= 2) ? mask : 0xc000'0000'0000'0000;
@@ -70,8 +70,8 @@ struct State {
 
   void sort() {
     auto morton = [](Particle const &p) { return Particle::morton(p); };
-    particles.sort(
-        [&morton](auto &&a, auto &&b) { return morton(a) < morton(b); });
+    std::sort(particles.begin(), particles.end(),
+              [&morton](auto &&a, auto &&b) { return morton(a) < morton(b); });
   }
 
   static State fresh(int N = 50'000) {
@@ -85,18 +85,19 @@ struct State {
     return s;
   }
 
-  std::list<Group<decltype(particles.begin())>>
-  groups(std::list<Group<decltype(particles.begin())>> prior = {}) {
+  using Groups = std::list<Group<decltype(particles.cbegin())>>;
+
+  Groups groups(Groups prior = {}) {
     if (mask == uint64_t(-1) || particles.empty())
       return {};
 
-    std::list<Group<decltype(particles.begin())>> r;
+    Groups r;
     auto m = mask;
     auto z = [m](auto &&p) { return Particle::morton(p, m); };
     auto grp = [&r](auto f, auto l) { r.push_back({f, l}); };
     if (prior.empty())
       // First time? Compute everything.
-      dyn::bh32::group(particles.begin(), particles.end(), z, grp);
+      dyn::bh32::group(particles.cbegin(), particles.cend(), z, grp);
     else
       // Subdivide group (g) knowing that no particle can jump through adjacent
       // groups by construction (sorted by Z-code, particles belong to disjoint
@@ -270,26 +271,20 @@ static int do_main() {
       // [1] Construct quadtree nodes at given depth (the mask; stored in s). If
       // no groups exist (either because the depth limit has been reached or
       // because there are no more particles), terminate the loop.
-      for (decltype(s.groups()) groups;
-           !(groups = s.groups(std::move(groups))).empty(); s.shift_right())
+      decltype(s.groups()) groups;
+      do {
+        groups = s.groups(std::move(groups));
         // [2] Apply a linear scan to all the groups found at the depth. Process
         // the group. Erase the particles that must be erased. In the next
         // round, with an additional level of detail, there will be hopefully
         // fewer particles.
-        for (auto g = groups.begin(); g != groups.end();)
-          if (process(*g) == Test::ERASE) {
-            if (g == groups.begin())
-              s.particles.erase(g->begin(), g->end());
-            else {
-              // erase() will invalidate the `last` value of the previous group
-              // (e). (end() returns the `last` field of a group.)
-              auto e{g};
-              --e;
-              e->last = s.particles.erase(g->begin(), g->end());
-            }
-            g = groups.erase(g);
-          } else
-            ++g;
+        std::erase_if(groups, [&process, s](auto &&g) {
+          return process(g) == Test::ERASE;
+        });
+        if (groups.empty())
+          break;
+        s.shift_right();
+      } while (!(groups = s.groups(std::move(groups))).empty());
     }
     EndMode2D();
 
