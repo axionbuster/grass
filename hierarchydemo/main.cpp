@@ -308,14 +308,12 @@ static int do_main() {
       // Require Z-sorted particles in state.
       View view{state};
       for (decltype(view.groups()) groups;; view.refine()) {
-        // [1] Construct quadtree nodes at given depth (the mask; stored in s).
+        // [1] Construct quadtree nodes at given depth (`view.mask`).
         // If no groups exist (either because the depth limit has been reached
         // or because there are no more particles), terminate the loop.
         groups = view.groups(std::move(groups));
         // [2] Apply a linear scan to all the groups found at the depth. Process
-        // the group. Erase the particles that must be erased. In the next
-        // round, with an additional level of detail, there will be hopefully
-        // fewer particles.
+        // the group. If `process` finds that the group need be erased, do so.
         std::erase_if(groups, process);
         // [3] If no groups remain, stop.
         if (groups.empty())
