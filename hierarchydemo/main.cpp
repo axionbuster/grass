@@ -57,6 +57,13 @@ template <typename I> struct Group {
     auto a{first};
     return ++a == last;
   }
+  /// Test: Are the iterators equal (discarding xy and radius)?
+  [[nodiscard]] bool operator==(Group const &g) const {
+    if (this == &g)
+      return true;
+    // Ignore: xy, radius.
+    return first == g.first && last == g.last;
+  }
 };
 
 /// Store particles
@@ -93,21 +100,31 @@ public:
 
 /// Build groups, do Barnes-Hut stuff
 class View {
-  static uint64_t constexpr DEFAULT_MASK = 0xffff'ffff'0000'0000;
-  State &s;
-  uint64_t mask;
+  State const &s;
+
+  // Start fully general (from the lowest level of detail).
+  //  (0xffff....ffff is the highest level of detail).
+  uint64_t mask = 0xc000'0000'0000'0000;
 
 public:
-  View(State &s) : s(s), mask(DEFAULT_MASK) {}
+  /// Take an immutable view to a table of particles.
+  /// Start with the lowest level of detail
+  /// (call `refine` to shift gear to a higher level of detail).
+  View(State const &s) : s(s) {}
 
   using Groups = std::list<Group<decltype(s.particles.cbegin())>>;
+
+  /// Compute the groups at the given level of detail, reusing work from an
+  /// earlier call by the same instance of View for the same instance of State.
+  /// (If not given, as usual for a fresh start, then compute everything).
   Groups groups(Groups &&prior = {}) {
-    if (mask == uint64_t(-1) || s.particles.empty())
+    if (!mask || s.particles.empty())
+      // !mask <-> halt. Sentinel used by `refine()`.
       return {};
-    Groups r;
+    Groups novel;
     auto m = mask;
     auto z = [m](auto &&p) { return Particle::morton(p, m); };
-    auto grp = [&r](auto f, auto l) { r.push_back({f, l}); };
+    auto grp = [&novel](auto f, auto l) { novel.push_back({f, l}); };
     if (prior.empty())
       // First time? Compute everything.
       dyn::bh32::group(s.particles.cbegin(), s.particles.cend(), z, grp);
@@ -117,8 +134,16 @@ public:
       // squares).
       for (auto &&g : prior)
         dyn::bh32::group(g.begin(), g.end(), z, grp);
+    // Test: same nodes pointing to the same particles? (ignoring physical
+    // summary).
+    if (prior == novel)
+      // Since loop below is hot, if point to same particles, reuse the work.
+      // Return `prior` which has the physical summary calculated.
+      // Don't return `novel`: it has zeroes instead of actual physical data.
+      return prior;
+    // Compute physical summary.
     // Position, radius.
-    for (auto &&g : r) {
+    for (auto &&g : novel) {
       // Welford's online mean algorithm: compute mean xy for all particles
       // (p) in the group (g).
       float n{};
@@ -128,11 +153,17 @@ public:
       for (auto &&p : g)
         g.radius = std::max(g.radius, std::abs(p.xy - g.xy));
     }
-    return r;
+    return novel;
   }
-  void reset_mask() { mask = 0xffff'ffff'0000'0000; }
-  void shift_right() {
+
+  /// Shift to the next (higher) level of detail.
+  void refine() {
+    // Apply arithmetic (sign-bit-extending) bit shift by two bits.
+    // (Z-codes (aka Morton codes) use two bits to designate each quadrant.)
     auto m = std::bit_cast<int64_t>(mask);
+    if (m == -1)
+      // Sentinel (halt).
+      mask = 0;
     mask = std::bit_cast<uint64_t>(m >> 2);
   }
 };
@@ -273,7 +304,7 @@ static int do_main() {
 
       // Require Z-sorted particles in state.
       View view{state};
-      for (decltype(view.groups()) groups;; view.shift_right()) {
+      for (decltype(view.groups()) groups;; view.refine()) {
         // [1] Construct quadtree nodes at given depth (the mask; stored in s).
         // If no groups exist (either because the depth limit has been reached
         // or because there are no more particles), terminate the loop.
@@ -286,7 +317,6 @@ static int do_main() {
         if (groups.empty())
           break;
       }
-      view.reset_mask();
     }
     EndMode2D();
 
