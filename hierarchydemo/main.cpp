@@ -1,3 +1,5 @@
+// Demonstrate Barnes-Hut approximation.
+
 #include <barnes_hut.h>
 #include <bit>
 #include <cmath>
@@ -72,7 +74,7 @@ struct State {
         [&morton](auto &&a, auto &&b) { return morton(a) < morton(b); });
   }
 
-  static State fresh(int N = 10'000) {
+  static State fresh(int N = 50'000) {
     decltype(particles) ps;
     std::mt19937 r(std::random_device{}());
     std::normal_distribution<float> z;
@@ -176,6 +178,8 @@ struct User {
 };
 
 static void draw_particle(auto &&p, auto color, auto zoom) {
+  // Drawing in camera mode, let the radius appear as 2 px on screen regardless
+  // of scale.
   auto radius = 2.0f / zoom;
   DrawCircleV({p.real(), p.imag()}, radius, color);
 }
@@ -195,6 +199,9 @@ static int do_main() {
   // Performance is highly sensitive to value:
   auto const tan_angle_threshold =
       std::tan(8.0f * std::numbers::pi_v<float> / 180.0f);
+
+  // Maximum viewing distance in world length units (or +infinity)
+  auto const max_view_distance = 4.0f;
 
   while (!WindowShouldClose()) {
     BeginDrawing();
@@ -217,12 +224,20 @@ static int do_main() {
       // level of detail), do whatever is desired, and then decide whether the
       // particles in the group should be considered at the next round (KEEP),
       // or if all the particles could be discarded (REMOVE).
-      auto process = [&user, w_mouse, tan_angle_threshold](auto &&g) {
+      auto process = [&user, w_mouse, tan_angle_threshold,
+                      max_view_distance](auto &&g) {
+        auto dist = std::abs(g.xy - w_mouse);
+        // Eliminate the group (g) and all its descendant particles if the given
+        // point (w_mouse) is far away from the boundary of the group's circle.
+        if (max_view_distance < dist - g.radius)
+          return Test::ERASE;
+        auto square = [](auto x) { return x * x; };
+        auto dim = 1.0f - square(dist / max_view_distance); // [0, 1] closed.
         if (g.single())
           // This group (g) wraps a single particle.
-          return draw_particle(g.xy, WHITE, user.cam.zoom), Test::ERASE;
+          return draw_particle(g.xy, Fade(WHITE, dim), user.cam.zoom),
+                 Test::ERASE;
         // Test the distance and the (approximate) viewing angle.
-        auto dist = std::abs(g.xy - w_mouse);
         if (dist < g.radius)
           // This group (g)'s circle contains the given point (w_mouse).
           // Higher level of detail required.
@@ -238,7 +253,8 @@ static int do_main() {
           return Test::KEEP;
         // Angle is small enough. Treat it as a point particle. Draw the
         // circle that represents the group for visualization.
-        DrawCircleLinesV({g.xy.real(), g.xy.imag()}, g.radius, YELLOW);
+        DrawCircleLinesV({g.xy.real(), g.xy.imag()}, g.radius,
+                         Fade(YELLOW, dim));
         return Test::ERASE;
       };
 
@@ -246,7 +262,7 @@ static int do_main() {
       // no groups exist (either because the depth limit has been reached or
       // because there are no more particles), terminate the loop.
       for (decltype(s.groups()) groups; !(groups = s.groups()).empty();
-           s.shift_right()) {
+           s.shift_right())
         // [2] Apply a linear scan to all the groups found at the depth. Process
         // the group. Erase the particles that must be erased. In the next
         // round, with an additional level of detail, there will be hopefully
@@ -254,7 +270,6 @@ static int do_main() {
         for (auto &&g : groups)
           if (process(g) == Test::ERASE)
             s.particles.erase(g.begin(), g.end());
-      }
     }
     EndMode2D();
 
