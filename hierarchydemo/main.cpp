@@ -2,10 +2,10 @@
 #include <bit>
 #include <cmath>
 #include <complex>
-#include <cstdint>
 #include <cstdio>
 #include <list>
 #include <morton.h>
+#include <numbers>
 #include <optional>
 #include <random>
 #include <raylib.h>
@@ -34,7 +34,7 @@ struct Particle {
   }
 };
 
-enum class Test { KEEP, REMOVE };
+enum class Test { KEEP, ERASE };
 
 template <typename I> struct Group {
   I first, last;
@@ -42,15 +42,15 @@ template <typename I> struct Group {
   float radius{};
   Group() = default;
   Group(I first, I last) : first(first), last(last) {}
-  I begin() { return first; }
-  I end() { return last; }
-  I begin() const { return first; }
-  I end() const { return last; }
+  [[nodiscard]] I begin() { return first; }
+  [[nodiscard]] I end() { return last; }
+  [[nodiscard]] I begin() const { return first; }
+  [[nodiscard]] I end() const { return last; }
 };
 
 struct State {
   std::list<Particle> particles;
-  uint64_t mask = 0xc000'0000'0000'0000;
+  uint64_t mask = 0xffff'ffff'0000'0000;
   [[maybe_unused]] void shift_left() {
     mask = (mask <<= 2) ? mask : 0xc000'0000'0000'0000;
   }
@@ -67,7 +67,7 @@ struct State {
 
   static State fresh(int N = 10'000) {
     decltype(particles) ps;
-    std::mt19937 r(1234);
+    std::mt19937 r(std::random_device{}());
     std::normal_distribution<float> z;
     for (auto i = 0; i < N; i++)
       ps.emplace_back(z(r), z(r), z(r), z(r));
@@ -76,7 +76,7 @@ struct State {
     return s;
   }
 
-  std::vector<Group<std::list<Particle>::iterator>> groups() {
+  std::vector<Group<decltype(particles.begin())>> groups() {
     if (mask == uint64_t(-1) || particles.empty())
       return {};
 
@@ -149,11 +149,17 @@ struct User {
     }
   }
 
-  void hud(int n_particles) {
-    DrawFPS(16, 16);
-    char msg[256]{};
+  static void hud(int n_particles) {
+    // px (screen); offset (16) + [font size {20} + padding {4}] * line.
+    auto y = [](int i) { return 16 + 24 * i; };
+    auto i = 0;
+    DrawFPS(16, y(i++));
+    char msg[64]{};
     snprintf(msg, sizeof msg, "%d particles", n_particles);
-    DrawText(msg, 16, 40, 20, WHITE);
+    DrawText(msg, 16, y(i++), 20, WHITE);
+    auto dt_ms = 1000.0f * GetFrameTime();
+    snprintf(msg, sizeof msg, "time %.1f ms", dt_ms);
+    DrawText(msg, 16, y(i++), 20, WHITE);
   }
 
   void adjust_fly() {
@@ -172,49 +178,49 @@ static int do_main() {
   SetConfigFlags(FLAG_WINDOW_RESIZABLE);
   InitWindow(600, 600, "X");
   SetTargetFPS(60);
-  User u;
+  User user;
+
+  // Performance is highly sensitive to value:
+  auto const tan_angle_threshold =
+      std::tan(8.0f * std::numbers::pi_v<float> / 180.0f);
+
   while (!WindowShouldClose()) {
     BeginDrawing();
     ClearBackground(BLACK);
-    u.hud(int(state.particles.size()));
-    BeginMode2D(u.cam);
+    User::hud(int(state.particles.size()));
+    BeginMode2D(user.cam);
     {
-      u.pan(), u.zoom();
-      if (u.adjust_fly(), u.flag.fly)
+      user.pan(), user.zoom();
+      if (user.adjust_fly(), user.flag.fly)
         // dt (Hz)
         state.fly(1.0f / 60.0f);
-
-      // I'll explain everything soon when I get the time to work on this again.
       auto s = state;
       auto [mx, my] = GetMousePosition();
-      auto v_mouse = GetScreenToWorld2D({mx, my}, u.cam);
+      auto v_mouse = GetScreenToWorld2D({mx, my}, user.cam);
       auto w_mouse = std::complex{v_mouse.x, v_mouse.y};
-      auto tan_angle_threshold = 0.176327f; // tan (10 deg).
       for (decltype(s.groups()) groups; !(groups = s.groups()).empty();
            s.shift_right()) {
-        auto process = [&u, w_mouse, tan_angle_threshold](auto &&g) {
-          if (!g.radius) {
-            draw_particle(g.xy, WHITE, u.cam.zoom);
-            return Test::REMOVE;
-          }
-          auto disp = g.xy - w_mouse;
-          auto dist = std::abs(disp);
+        auto process = [&user, w_mouse, tan_angle_threshold](auto &&g) {
+          if (!g.radius)
+            return draw_particle(g.xy, WHITE, user.cam.zoom), Test::ERASE;
+          auto dist = std::abs(g.xy - w_mouse);
           if (dist < g.radius)
-            goto keep;
+            return Test::KEEP;
           if (auto tan = g.radius / dist; tan_angle_threshold < tan)
-            goto keep;
+            return Test::KEEP;
           DrawCircleLinesV({g.xy.real(), g.xy.imag()}, g.radius, YELLOW);
-          return Test::REMOVE;
-        keep:
-          DrawCircleLinesV({g.xy.real(), g.xy.imag()}, g.radius, GRAY);
-          return Test::KEEP;
+          return Test::ERASE;
         };
         for (auto &&g : groups)
-          if (process(g) == Test::REMOVE)
+          if (process(g) == Test::ERASE)
             s.particles.erase(g.begin(), g.end());
       }
     }
     EndMode2D();
+
+    if (IsKeyPressed(KEY_R))
+      state = State::fresh(), user = {};
+
     EndDrawing();
   }
   CloseWindow();
