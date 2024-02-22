@@ -13,6 +13,7 @@
 #include <raylib.h>
 #include <vector>
 
+/// Particle with location and velocity.
 struct Particle {
   std::complex<float> xy, v;
 
@@ -36,8 +37,10 @@ struct Particle {
   }
 };
 
-enum { KEEP, ERASE };
+/// Used for signaling in the Barnes-Hut iteration.
+enum { KEEP = 0, ERASE = 1 };
 
+/// Barnes-Hut "group" of particles
 template <typename I> struct Group {
   I first, last;
   std::complex<float> xy;
@@ -56,53 +59,64 @@ template <typename I> struct Group {
   }
 };
 
-struct State {
+/// Store particles
+class State {
   /// A list of particles.
   std::vector<Particle> particles;
-  uint64_t mask = 0xffff'ffff'0000'0000;
-  void reset_mask() { mask = 0xffff'ffff'0000'0000; }
-  void shift_right() {
-    auto m = std::bit_cast<int64_t>(mask);
-    mask = std::bit_cast<uint64_t>(m >> 2);
+  friend class View;
+
+public:
+  State(int N = 50'000) {
+    std::mt19937 r(std::random_device{}());
+    std::normal_distribution<float> z;
+    for (auto i = 0; i < N; i++)
+      particles.emplace_back(z(r), z(r), z(r), z(r));
+    sort();
+  }
+
+  void fly(float dt) {
+    for (auto &&p : particles)
+      p.xy += dt * p.v;
+    sort();
   }
 
   void sort() {
-    auto morton = [](Particle const &p) { return Particle::morton(p); };
+    auto constexpr morton = [](Particle const &p) {
+      return Particle::morton(p);
+    };
     std::sort(particles.begin(), particles.end(),
               [&morton](auto &&a, auto &&b) { return morton(a) < morton(b); });
   }
 
-  static State fresh(int N = 50'000) {
-    decltype(particles) ps;
-    std::mt19937 r(std::random_device{}());
-    std::normal_distribution<float> z;
-    for (auto i = 0; i < N; i++)
-      ps.emplace_back(z(r), z(r), z(r), z(r));
-    State s{ps};
-    s.sort();
-    return s;
-  }
+  [[nodiscard]] size_t size() const { return particles.size(); }
+};
 
-  using Groups = std::list<Group<decltype(particles.cbegin())>>;
+/// Build groups, do Barnes-Hut stuff
+class View {
+  static uint64_t constexpr DEFAULT_MASK = 0xffff'ffff'0000'0000;
+  State &s;
+  uint64_t mask;
 
-  Groups groups(Groups prior = {}) {
-    if (mask == uint64_t(-1) || particles.empty())
+public:
+  View(State &s) : s(s), mask(DEFAULT_MASK) {}
+
+  using Groups = std::list<Group<decltype(s.particles.cbegin())>>;
+  Groups groups(Groups &&prior = {}) {
+    if (mask == uint64_t(-1) || s.particles.empty())
       return {};
-
     Groups r;
     auto m = mask;
     auto z = [m](auto &&p) { return Particle::morton(p, m); };
     auto grp = [&r](auto f, auto l) { r.push_back({f, l}); };
     if (prior.empty())
       // First time? Compute everything.
-      dyn::bh32::group(particles.cbegin(), particles.cend(), z, grp);
+      dyn::bh32::group(s.particles.cbegin(), s.particles.cend(), z, grp);
     else
       // Subdivide group (g) knowing that no particle can jump through adjacent
       // groups by construction (sorted by Z-code, particles belong to disjoint
       // squares).
       for (auto &&g : prior)
         dyn::bh32::group(g.begin(), g.end(), z, grp);
-
     // Position, radius.
     for (auto &&g : r) {
       // Welford's online mean algorithm: compute mean xy for all particles
@@ -116,18 +130,14 @@ struct State {
     }
     return r;
   }
-
-  void fly(float dt) {
-    for (auto &&p : particles)
-      p.xy += dt * p.v;
-    sort();
+  void reset_mask() { mask = 0xffff'ffff'0000'0000; }
+  void shift_right() {
+    auto m = std::bit_cast<int64_t>(mask);
+    mask = std::bit_cast<uint64_t>(m >> 2);
   }
-
-private:
-  State() = default;
-  State(decltype(particles) ps) : particles{std::move(ps)} {}
 };
 
+/// User interface
 struct User {
   Camera2D cam{};
   float zoom0{};
@@ -183,19 +193,16 @@ struct User {
     if (IsKeyPressed(KEY_SPACE))
       flag.fly = !flag.fly;
   }
+
+  void dot(auto &&p, auto color) {
+    auto radius = 2.0f / cam.zoom;
+    DrawCircleV({p.real(), p.imag()}, radius, color);
+  }
 };
 
-static void draw_particle(auto &&p, auto color, auto zoom) {
-  // Drawing in camera mode, let the radius appear as 2 px on screen regardless
-  // of scale.
-  auto radius = 2.0f / zoom;
-  DrawCircleV({p.real(), p.imag()}, radius, color);
-}
-
 static int do_main() {
-  // Prepare the particles, and then Z-sort them. Also, know the default mask
-  // level (default level of detail).
-  auto state = State::fresh();
+  // Prepare the particles, and then Z-sort them.
+  State state;
 
   SetConfigFlags(FLAG_WINDOW_RESIZABLE);
   InitWindow(600, 600, "X");
@@ -214,7 +221,6 @@ static int do_main() {
   while (!WindowShouldClose()) {
     BeginDrawing();
     ClearBackground(BLACK);
-    User::hud(int(state.particles.size()));
     BeginMode2D(user.cam);
     {
       user.pan(), user.zoom();
@@ -225,6 +231,7 @@ static int do_main() {
       auto [mx, my] = GetMousePosition();
       auto v_mouse = GetScreenToWorld2D({mx, my}, user.cam);
       auto w_mouse = std::complex{v_mouse.x, v_mouse.y};
+
       // Apply BFS (breadth-first search) to the implicit quadtree.
 
       // For each "group" (bunch of particles considered to have the same
@@ -242,7 +249,7 @@ static int do_main() {
         auto dim = 1.0f - square(dist / max_view_distance); // [0, 1] closed.
         if (g.single())
           // This group (g) wraps a single particle.
-          return draw_particle(g.xy, Fade(WHITE, dim), user.cam.zoom), ERASE;
+          return user.dot(g.xy, Fade(WHITE, dim)), ERASE;
         // Test the distance and the (approximate) viewing angle.
         if (dist < g.radius)
           // This group (g)'s circle contains the given point (w_mouse).
@@ -255,20 +262,22 @@ static int do_main() {
         // underapproximation (but a good one) of one-half of the true view
         // angle.
         if (auto tan = g.radius / dist; tan_angle_threshold < tan)
-          // Angle is too wide; higher detail required.
+          // View angle too wide; higher detail required.
           return KEEP;
-        // Angle is small enough. Treat it as a point particle. Draw the
-        // circle that represents the group for visualization.
+        // View angle is small enough. Treat g as a point particle. Draw the
+        // circle that represents g for visualization.
         DrawCircleLinesV({g.xy.real(), g.xy.imag()}, g.radius,
                          Fade(YELLOW, dim));
         return ERASE;
       };
 
-      for (decltype(state.groups()) groups;; state.shift_right()) {
+      // Require Z-sorted particles in state.
+      View view{state};
+      for (decltype(view.groups()) groups;; view.shift_right()) {
         // [1] Construct quadtree nodes at given depth (the mask; stored in s).
         // If no groups exist (either because the depth limit has been reached
         // or because there are no more particles), terminate the loop.
-        groups = state.groups(std::move(groups));
+        groups = view.groups(std::move(groups));
         // [2] Apply a linear scan to all the groups found at the depth. Process
         // the group. Erase the particles that must be erased. In the next
         // round, with an additional level of detail, there will be hopefully
@@ -277,12 +286,14 @@ static int do_main() {
         if (groups.empty())
           break;
       }
-      state.reset_mask();
+      view.reset_mask();
     }
     EndMode2D();
 
+    User::hud(int(state.size()));
+
     if (IsKeyPressed(KEY_R))
-      state = State::fresh(), user = {};
+      state = {}, user = {};
 
     EndDrawing();
   }
