@@ -1,5 +1,6 @@
 // Demonstrate Barnes-Hut approximation.
 
+#include <algorithm>
 #include <barnes_hut.h>
 #include <bit>
 #include <cmath>
@@ -91,8 +92,9 @@ public:
     auto constexpr morton = [](Particle const &p) {
       return Particle::morton(p);
     };
-    std::sort(particles.begin(), particles.end(),
-              [&morton](auto &&a, auto &&b) { return morton(a) < morton(b); });
+    // At least on MSVC (as of writing), stable_sort is seen to be faster than
+    // sort. I have no idea why. It just is.
+    std::ranges::stable_sort(particles.begin(), particles.end(), {}, morton);
   }
 
   [[nodiscard]] size_t size() const { return particles.size(); }
