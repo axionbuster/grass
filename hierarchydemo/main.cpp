@@ -85,15 +85,24 @@ struct State {
     return s;
   }
 
-  std::vector<Group<decltype(particles.begin())>> groups() {
+  std::list<Group<decltype(particles.begin())>>
+  groups(std::list<Group<decltype(particles.begin())>> prior = {}) {
     if (mask == uint64_t(-1) || particles.empty())
       return {};
 
-    decltype(groups()) r;
+    std::list<Group<decltype(particles.begin())>> r;
     auto m = mask;
     auto z = [m](auto &&p) { return Particle::morton(p, m); };
     auto grp = [&r](auto f, auto l) { r.push_back({f, l}); };
-    dyn::bh32::group(particles.begin(), particles.end(), z, grp);
+    if (prior.empty())
+      // First time? Compute everything.
+      dyn::bh32::group(particles.begin(), particles.end(), z, grp);
+    else
+      // Subdivide group (g) knowing that no particle can jump through adjacent
+      // groups by construction (sorted by Z-code, particles belong to disjoint
+      // squares).
+      for (auto &&g : prior)
+        dyn::bh32::group(g.begin(), g.end(), z, grp);
 
     // Position, radius.
     for (auto &&g : r) {
@@ -261,15 +270,26 @@ static int do_main() {
       // [1] Construct quadtree nodes at given depth (the mask; stored in s). If
       // no groups exist (either because the depth limit has been reached or
       // because there are no more particles), terminate the loop.
-      for (decltype(s.groups()) groups; !(groups = s.groups()).empty();
-           s.shift_right())
+      for (decltype(s.groups()) groups;
+           !(groups = s.groups(std::move(groups))).empty(); s.shift_right())
         // [2] Apply a linear scan to all the groups found at the depth. Process
         // the group. Erase the particles that must be erased. In the next
         // round, with an additional level of detail, there will be hopefully
         // fewer particles.
-        for (auto &&g : groups)
-          if (process(g) == Test::ERASE)
-            s.particles.erase(g.begin(), g.end());
+        for (auto g = groups.begin(); g != groups.end();)
+          if (process(*g) == Test::ERASE) {
+            if (g == groups.begin())
+              s.particles.erase(g->begin(), g->end());
+            else {
+              // erase() will invalidate the `last` value of the previous group
+              // (e). (end() returns the `last` field of a group.)
+              auto e{g};
+              --e;
+              e->last = s.particles.erase(g->begin(), g->end());
+            }
+            g = groups.erase(g);
+          } else
+            ++g;
     }
     EndMode2D();
 
