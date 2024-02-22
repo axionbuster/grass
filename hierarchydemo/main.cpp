@@ -46,9 +46,16 @@ template <typename I> struct Group {
   [[nodiscard]] I end() { return last; }
   [[nodiscard]] I begin() const { return first; }
   [[nodiscard]] I end() const { return last; }
+  [[nodiscard]] bool single() const {
+    if (first == last)
+      return false;
+    auto a{first};
+    return ++a == last;
+  }
 };
 
 struct State {
+  /// A list of particles.
   std::list<Particle> particles;
   uint64_t mask = 0xffff'ffff'0000'0000;
   [[maybe_unused]] void shift_left() {
@@ -174,10 +181,15 @@ static void draw_particle(auto &&p, auto color, auto zoom) {
 }
 
 static int do_main() {
+  // Prepare the particles, and then Z-sort them. Also, know the default mask
+  // level (default level of detail).
   auto state = State::fresh();
+
   SetConfigFlags(FLAG_WINDOW_RESIZABLE);
   InitWindow(600, 600, "X");
   SetTargetFPS(60);
+
+  // (Auxiliary object for GUI).
   User user;
 
   // Performance is highly sensitive to value:
@@ -192,25 +204,53 @@ static int do_main() {
     {
       user.pan(), user.zoom();
       if (user.adjust_fly(), user.flag.fly)
-        // dt (Hz)
-        state.fly(1.0f / 60.0f);
+        state.fly(1.0f / 60.0f); // [1 / Hz] = [seconds].
+      // Copy the Z-sorted list of particles and mask (both in s).
       auto s = state;
+      // Get an example "starter" point in world coordinates (w_mouse).
       auto [mx, my] = GetMousePosition();
       auto v_mouse = GetScreenToWorld2D({mx, my}, user.cam);
       auto w_mouse = std::complex{v_mouse.x, v_mouse.y};
+      // Apply BFS (breadth-first search) to the implicit quadtree.
+
+      // For each "group" (bunch of particles considered to have the same
+      // level of detail), do whatever is desired, and then decide whether the
+      // particles in the group should be considered at the next round (KEEP),
+      // or if all the particles could be discarded (REMOVE).
+      auto process = [&user, w_mouse, tan_angle_threshold](auto &&g) {
+        if (g.single())
+          // This group (g) wraps a single particle.
+          return draw_particle(g.xy, WHITE, user.cam.zoom), Test::ERASE;
+        // Test the distance and the (approximate) viewing angle.
+        auto dist = std::abs(g.xy - w_mouse);
+        if (dist < g.radius)
+          // This group (g)'s circle contains the given point (w_mouse).
+          // Higher level of detail required.
+          return Test::KEEP;
+        // Construct a radius perpendicular to the line of sight from the
+        // given point (w_mouse) from the center of the group's circle, and
+        // then measure the angle between the ray from w_mouse to the radial
+        // endpoint and the ray of the line of sight. This is an
+        // underapproximation (but a good one) of one-half of the true view
+        // angle.
+        if (auto tan = g.radius / dist; tan_angle_threshold < tan)
+          // Angle is too wide; higher detail required.
+          return Test::KEEP;
+        // Angle is small enough. Treat it as a point particle. Draw the
+        // circle that represents the group for visualization.
+        DrawCircleLinesV({g.xy.real(), g.xy.imag()}, g.radius, YELLOW);
+        return Test::ERASE;
+      };
+
+      // [1] Construct quadtree nodes at given depth (the mask; stored in s). If
+      // no groups exist (either because the depth limit has been reached or
+      // because there are no more particles), terminate the loop.
       for (decltype(s.groups()) groups; !(groups = s.groups()).empty();
            s.shift_right()) {
-        auto process = [&user, w_mouse, tan_angle_threshold](auto &&g) {
-          if (!g.radius)
-            return draw_particle(g.xy, WHITE, user.cam.zoom), Test::ERASE;
-          auto dist = std::abs(g.xy - w_mouse);
-          if (dist < g.radius)
-            return Test::KEEP;
-          if (auto tan = g.radius / dist; tan_angle_threshold < tan)
-            return Test::KEEP;
-          DrawCircleLinesV({g.xy.real(), g.xy.imag()}, g.radius, YELLOW);
-          return Test::ERASE;
-        };
+        // [2] Apply a linear scan to all the groups found at the depth. Process
+        // the group. Erase the particles that must be erased. In the next
+        // round, with an additional level of detail, there will be hopefully
+        // fewer particles.
         for (auto &&g : groups)
           if (process(g) == Test::ERASE)
             s.particles.erase(g.begin(), g.end());
