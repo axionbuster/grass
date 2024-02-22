@@ -158,12 +158,12 @@ public:
 
   /// Shift to the next (higher) level of detail.
   void refine() {
+    if (mask == 0xffff'ffff'ffff'ffff)
+      // Signal `groups` to produce nothing and halt.
+      mask = 0;
     // Apply arithmetic (sign-bit-extending) bit shift by two bits.
     // (Z-codes (aka Morton codes) use two bits to designate each quadrant.)
     auto m = std::bit_cast<int64_t>(mask);
-    if (m == -1)
-      // Sentinel (halt).
-      mask = 0;
     mask = std::bit_cast<uint64_t>(m >> 2);
   }
 };
@@ -242,12 +242,15 @@ static int do_main() {
   // (Auxiliary object for GUI).
   User user;
 
-  // Performance is highly sensitive to value:
+  // Performance is highly sensitive to value (tangent of half of viewing angle)
+  //  Smaller angle: bad for performance, ostensibly more "accurate"
+  //  Larger angle: good for performance, less "accurate"
+  // *accuracy: depends on application.
   auto const tan_angle_threshold =
-      std::tan(8.0f * std::numbers::pi_v<float> / 180.0f);
+      std::tan(5.0f * std::numbers::pi_v<float> / 180.0f);
 
   // Maximum viewing distance in world length units (or +infinity)
-  auto const max_view_distance = 4.0f;
+  auto const max_view_distance = 10.0f;
 
   while (!WindowShouldClose()) {
     BeginDrawing();
@@ -314,6 +317,7 @@ static int do_main() {
         // round, with an additional level of detail, there will be hopefully
         // fewer particles.
         std::erase_if(groups, process);
+        // [3] If no groups remain, stop.
         if (groups.empty())
           break;
       }
