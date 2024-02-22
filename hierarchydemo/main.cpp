@@ -36,7 +36,7 @@ struct Particle {
   }
 };
 
-enum class Test { KEEP, ERASE };
+enum { KEEP, ERASE };
 
 template <typename I> struct Group {
   I first, last;
@@ -60,9 +60,7 @@ struct State {
   /// A list of particles.
   std::vector<Particle> particles;
   uint64_t mask = 0xffff'ffff'0000'0000;
-  [[maybe_unused]] void shift_left() {
-    mask = (mask <<= 2) ? mask : 0xc000'0000'0000'0000;
-  }
+  void reset_mask() { mask = 0xffff'ffff'0000'0000; }
   void shift_right() {
     auto m = std::bit_cast<int64_t>(mask);
     mask = std::bit_cast<uint64_t>(m >> 2);
@@ -222,8 +220,7 @@ static int do_main() {
       user.pan(), user.zoom();
       if (user.adjust_fly(), user.flag.fly)
         state.fly(1.0f / 60.0f); // [1 / Hz] = [seconds].
-      // Copy the Z-sorted list of particles and mask (both in s).
-      auto s = state;
+
       // Get an example "starter" point in world coordinates (w_mouse).
       auto [mx, my] = GetMousePosition();
       auto v_mouse = GetScreenToWorld2D({mx, my}, user.cam);
@@ -240,18 +237,17 @@ static int do_main() {
         // Eliminate the group (g) and all its descendant particles if the given
         // point (w_mouse) is far away from the boundary of the group's circle.
         if (max_view_distance < dist - g.radius)
-          return Test::ERASE;
+          return ERASE;
         auto square = [](auto x) { return x * x; };
         auto dim = 1.0f - square(dist / max_view_distance); // [0, 1] closed.
         if (g.single())
           // This group (g) wraps a single particle.
-          return draw_particle(g.xy, Fade(WHITE, dim), user.cam.zoom),
-                 Test::ERASE;
+          return draw_particle(g.xy, Fade(WHITE, dim), user.cam.zoom), ERASE;
         // Test the distance and the (approximate) viewing angle.
         if (dist < g.radius)
           // This group (g)'s circle contains the given point (w_mouse).
           // Higher level of detail required.
-          return Test::KEEP;
+          return KEEP;
         // Construct a radius perpendicular to the line of sight from the
         // given point (w_mouse) from the center of the group's circle, and
         // then measure the angle between the ray from w_mouse to the radial
@@ -260,31 +256,28 @@ static int do_main() {
         // angle.
         if (auto tan = g.radius / dist; tan_angle_threshold < tan)
           // Angle is too wide; higher detail required.
-          return Test::KEEP;
+          return KEEP;
         // Angle is small enough. Treat it as a point particle. Draw the
         // circle that represents the group for visualization.
         DrawCircleLinesV({g.xy.real(), g.xy.imag()}, g.radius,
                          Fade(YELLOW, dim));
-        return Test::ERASE;
+        return ERASE;
       };
 
-      // [1] Construct quadtree nodes at given depth (the mask; stored in s). If
-      // no groups exist (either because the depth limit has been reached or
-      // because there are no more particles), terminate the loop.
-      decltype(s.groups()) groups;
-      do {
-        groups = s.groups(std::move(groups));
+      for (decltype(state.groups()) groups;; state.shift_right()) {
+        // [1] Construct quadtree nodes at given depth (the mask; stored in s).
+        // If no groups exist (either because the depth limit has been reached
+        // or because there are no more particles), terminate the loop.
+        groups = state.groups(std::move(groups));
         // [2] Apply a linear scan to all the groups found at the depth. Process
         // the group. Erase the particles that must be erased. In the next
         // round, with an additional level of detail, there will be hopefully
         // fewer particles.
-        std::erase_if(groups, [&process, s](auto &&g) {
-          return process(g) == Test::ERASE;
-        });
+        std::erase_if(groups, process);
         if (groups.empty())
           break;
-        s.shift_right();
-      } while (!(groups = s.groups(std::move(groups))).empty());
+      }
+      state.reset_mask();
     }
     EndMode2D();
 
