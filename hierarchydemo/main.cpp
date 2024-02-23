@@ -5,6 +5,7 @@
 #include <bit>
 #include <cmath>
 #include <complex>
+#include <cstdint>
 #include <cstdio>
 #include <list>
 #include <morton.h>
@@ -17,9 +18,19 @@
 /// Particle with location and velocity.
 struct Particle {
   std::complex<float> xy, v;
+  std::optional<uint64_t> morton_code{};
 
   Particle() = default;
   Particle(float x, float y, float vx, float vy) : xy{x, y}, v{vx, vy} {}
+
+  void update_morton() { morton_code = morton(xy); }
+
+  std::optional<uint64_t> morton_masked(uint64_t mask) const {
+    if (morton_code.has_value())
+      return morton_code.value() & mask;
+    else
+      return {};
+  }
 
   static std::optional<uint64_t> morton(std::complex<float> p) {
     return dyn::fixedmorton32(p);
@@ -74,7 +85,7 @@ class State {
   friend class View;
 
 public:
-  State(int N = 50'000) {
+  State(int N = 100'000) {
     std::mt19937 r(std::random_device{}());
     std::normal_distribution<float> z;
     for (auto i = 0; i < N; i++)
@@ -89,12 +100,13 @@ public:
   }
 
   void sort() {
-    auto constexpr morton = [](Particle const &p) {
-      return Particle::morton(p);
-    };
+    // Update the Morton codes.
+    for (auto &&p : particles)
+      p.update_morton();
     // At least on MSVC (as of writing), stable_sort is seen to be faster than
     // sort. I have no idea why. It just is.
-    std::ranges::stable_sort(particles.begin(), particles.end(), {}, morton);
+    std::ranges::stable_sort(particles.begin(), particles.end(), {},
+                             [](auto &&p) { return p.morton_code; });
   }
 
   [[nodiscard]] size_t size() const { return particles.size(); }
@@ -125,7 +137,7 @@ public:
       return {};
     Groups novel;
     auto m = mask;
-    auto z = [m](auto &&p) { return Particle::morton(p, m); };
+    auto z = [m](auto &&p) { return p.morton_masked(m); };
     auto grp = [&novel](auto f, auto l) { novel.push_back({f, l}); };
     if (prior.empty())
       // First time? Compute everything.
@@ -227,7 +239,7 @@ struct User {
       flag.fly = !flag.fly;
   }
 
-  void dot(auto &&p, auto color) {
+  void dot(auto &&p, auto color) const {
     auto radius = 2.0f / cam.zoom;
     DrawCircleV({p.real(), p.imag()}, radius, color);
   }
