@@ -25,7 +25,7 @@ struct Particle {
 
   void update_morton() { morton_code = morton(xy); }
 
-  std::optional<uint64_t> morton_masked(uint64_t mask) const {
+  [[nodiscard]] std::optional<uint64_t> morton_masked(uint64_t mask) const {
     if (morton_code.has_value())
       return morton_code.value() & mask;
     else
