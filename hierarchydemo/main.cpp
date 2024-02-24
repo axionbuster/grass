@@ -13,7 +13,10 @@
 #include <optional>
 #include <random>
 #include <raylib.h>
+#include <type_traits>
 #include <vector>
+
+#include "user.h"
 
 /// Particle with location and velocity.
 struct Particle {
@@ -85,8 +88,8 @@ class State {
   friend class View;
 
 public:
-  State(int N = 100'000) {
-    std::mt19937 r(std::random_device{}());
+  State(int N = 10'000) {
+    std::mt19937 r(1234);
     std::normal_distribution<float> z;
     for (auto i = 0; i < N; i++)
       particles.emplace_back(z(r), z(r), z(r), z(r));
@@ -131,7 +134,7 @@ public:
   /// Compute the groups at the given level of detail, reusing work from an
   /// earlier call by the same instance of View for the same instance of State.
   /// (If not given, as usual for a fresh start, then compute everything).
-  Groups groups(Groups &&prior = {}) {
+  Groups groups(Groups const &prior = {}) const {
     if (!mask || s.particles.empty())
       // !mask <-> halt. Sentinel used by `refine()`.
       return {};
@@ -179,69 +182,6 @@ public:
     // (Z-codes (aka Morton codes) use two bits to designate each quadrant.)
     auto m = std::bit_cast<int64_t>(mask);
     mask = std::bit_cast<uint64_t>(m >> 2);
-  }
-};
-
-/// User interface
-struct User {
-  Camera2D cam{};
-  float zoom0{};
-  struct {
-    bool fly : 1 {};
-  } flag{};
-
-  User() {
-    auto w = float(GetScreenWidth()), h = float(GetScreenHeight()),
-         z = std::min(w, h);
-    cam.offset = {w * 0.5f, h * 0.5f};
-    cam.zoom = 0.25f * z;
-    zoom0 = cam.zoom;
-  }
-
-  void pan() {
-    if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
-      auto u = GetMouseDelta();
-      auto v = std::complex{u.x, u.y};
-      auto w = std::complex{cam.target.x, cam.target.y};
-      auto x = w - v / cam.zoom;
-      cam.target = {x.real(), x.imag()};
-    }
-  }
-
-  void zoom() {
-    if (auto wheel = GetMouseWheelMove()) {
-      auto u = GetMousePosition();
-      auto v = GetScreenToWorld2D(u, cam);
-      cam.offset = u;
-      cam.target = v;
-      auto constexpr ZOOM_INCR = 5.0f;
-      cam.zoom += wheel * ZOOM_INCR;
-      cam.zoom = std::max(cam.zoom, 0.25f * zoom0);
-      cam.zoom = std::min(cam.zoom, 10.0f * zoom0);
-    }
-  }
-
-  static void hud(int n_particles) {
-    // px (screen); offset (16) + [font size {20} + padding {4}] * line.
-    auto y = [](int i) { return 16 + 24 * i; };
-    auto i = 0;
-    DrawFPS(16, y(i++));
-    char msg[64]{};
-    snprintf(msg, sizeof msg, "%d particles", n_particles);
-    DrawText(msg, 16, y(i++), 20, WHITE);
-    auto dt_ms = 1000.0f * GetFrameTime();
-    snprintf(msg, sizeof msg, "time %.1f ms", dt_ms);
-    DrawText(msg, 16, y(i++), 20, WHITE);
-  }
-
-  void adjust_fly() {
-    if (IsKeyPressed(KEY_SPACE))
-      flag.fly = !flag.fly;
-  }
-
-  void dot(auto &&p, auto color) const {
-    auto radius = 2.0f / cam.zoom;
-    DrawCircleV({p.real(), p.imag()}, radius, color);
   }
 };
 
@@ -321,17 +261,52 @@ static int do_main() {
 
       // Require Z-sorted particles in state.
       View view{state};
-      for (decltype(view.groups()) groups;; view.refine()) {
-        // [1] Construct quadtree nodes at given depth (`view.mask`).
-        // If no groups exist (either because the depth limit has been reached
-        // or because there are no more particles), terminate the loop.
-        groups = view.groups(std::move(groups));
-        // [2] Apply a linear scan to all the groups found at the depth. Process
-        // the group. If `process` finds that the group need be erased, do so.
-        std::erase_if(groups, process);
-        // [3] If no groups remain, stop.
-        if (groups.empty())
-          break;
+
+      // For a realistic scenario, generate all the levels at once.
+      std::list<View::Groups> levels{view.groups()};
+      do {
+        levels.push_back(view.groups(levels.back()));
+        view.refine();
+      } while (!levels.back().empty());
+      levels.pop_back();
+
+      // Remove adjacent duplicate layers.
+      levels.unique();
+
+      // Traverse on copies. (Required to do so because it's a prototype to the
+      // real one, which requires working on cheap copies.)
+      // Work in adjacent pairs of layers from the first to last. In each pair
+      // of layers, only accept the groups (elements of the layers) that are
+      // subsets of the other layer's groups, and trim the rest.
+      if (!levels.empty()) {
+        auto prior{levels.front()};
+        auto begin = levels.begin();
+        while (++begin != levels.end()) {
+          auto const &novel = *begin;
+          decltype(prior) copy;
+          auto pg = prior.begin();
+          auto ng = novel.begin();
+          if (ng == novel.end())
+            break;
+          // Skip.
+          while (ng->begin() != pg->begin())
+            ++ng;
+          // Cull.
+          while (pg != prior.end()) {
+            if (ng->begin() == pg->begin()) {
+              while (ng->end() != pg->end())
+                copy.push_back(*ng++);
+              copy.push_back(*ng++), ++pg;
+            } else
+              while (ng->begin() != pg->begin())
+                ++ng;
+          }
+          // Process.
+          std::erase_if(copy, process);
+          if (copy.empty())
+            break;
+          prior = copy;
+        }
       }
     }
     EndMode2D();
@@ -348,7 +323,8 @@ static int do_main() {
 }
 
 #if defined(_WIN32)
-int WinMain(void *_0, void *_1, void *_2, int _3) { return do_main(); }
+#define U [[maybe_unused]]
+int WinMain(U void *_0, U void *_1, U void *_2, U int _3) { return do_main(); }
 #else
 int main() { return do_main(); }
 #endif

@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.27)
 # Use WinMain() as entry point (if on Windows).
 set(CMAKE_WIN32_EXECUTABLE TRUE)
 
-add_executable(hierarchydemo main.cpp)
+add_executable(hierarchydemo main.cpp "user.h")
 
 if(MSVC)
     target_compile_options(hierarchydemo PRIVATE /W4)
