@@ -9,11 +9,11 @@ add_executable(grass main.cpp
         Table.h
         irhall.h)
 
-if(MSVC)
+if (MSVC)
     target_compile_options(grass PRIVATE /W4)
-else()
+else ()
     target_compile_options(grass PRIVATE -Wall -Wextra -Wpedantic)
-endif()
+endif ()
 
 target_link_libraries(grass raylib)
 target_link_libraries(grass dyn)

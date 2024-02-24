@@ -3,11 +3,11 @@ set(CMAKE_WIN32_EXECUTABLE TRUE)
 
 add_executable(quadrantdemo main.cpp)
 
-if(MSVC)
+if (MSVC)
     target_compile_options(quadrantdemo PRIVATE /W4)
-else()
+else ()
     target_compile_options(quadrantdemo PRIVATE -Wall -Wextra -Wpedantic)
-endif()
+endif ()
 
 target_link_libraries(quadrantdemo dyn)
 target_link_libraries(quadrantdemo raylib)

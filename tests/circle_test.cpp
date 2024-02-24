@@ -45,14 +45,8 @@ protected:
       n{5.0f, 3.0f}, s{7.0f, 2.0f}, u{9.0f, 3.0f};
 };
 
-TEST_F(CircleTest3, In0) {
-  ASSERT_TRUE(dyn::disk_arrect_isct(circle, c, e));
-}
+TEST_F(CircleTest3, In0) { ASSERT_TRUE(dyn::disk_arrect_isct(circle, c, e)); }
 
-TEST_F(CircleTest3, In1) {
-  ASSERT_TRUE(dyn::disk_arrect_isct(circle, l, n));
-}
+TEST_F(CircleTest3, In1) { ASSERT_TRUE(dyn::disk_arrect_isct(circle, l, n)); }
 
-TEST_F(CircleTest3, Out0) {
-  ASSERT_FALSE(dyn::disk_arrect_isct(circle, s, u));
-}
+TEST_F(CircleTest3, Out0) { ASSERT_FALSE(dyn::disk_arrect_isct(circle, s, u)); }

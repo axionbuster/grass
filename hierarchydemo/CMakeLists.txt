@@ -7,11 +7,11 @@ set(CMAKE_WIN32_EXECUTABLE TRUE)
 
 add_executable(hierarchydemo main.cpp "user.h")
 
-if(MSVC)
+if (MSVC)
     target_compile_options(hierarchydemo PRIVATE /W4)
-else()
+else ()
     target_compile_options(hierarchydemo PRIVATE -Wall -Wextra -Wpedantic)
-endif()
+endif ()
 
 target_link_libraries(hierarchydemo raylib)
 target_link_libraries(hierarchydemo dyn)
