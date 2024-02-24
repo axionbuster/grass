@@ -5,15 +5,11 @@
 #include <bit>
 #include <cmath>
 #include <complex>
-#include <cstdint>
-#include <cstdio>
-#include <list>
 #include <morton.h>
 #include <numbers>
 #include <optional>
 #include <random>
 #include <raylib.h>
-#include <type_traits>
 #include <vector>
 
 #include "user.h"
@@ -34,7 +30,6 @@ struct Particle {
     else
       return {};
   }
-
   static std::optional<uint64_t> morton(std::complex<float> p) {
     return dyn::fixedmorton32(p);
   }
@@ -46,9 +41,6 @@ struct Particle {
       return z.value() & mask;
     else
       return {};
-  }
-  static std::optional<uint64_t> morton(Particle const &p, uint64_t mask) {
-    return morton(p.xy, mask);
   }
 };
 
@@ -89,7 +81,7 @@ class State {
 
 public:
   State(int N = 50'000) {
-    std::mt19937 r(1234);
+    std::mt19937 r(std::random_device{}());
     std::normal_distribution<float> z;
     for (auto i = 0; i < N; i++)
       particles.emplace_back(z(r), z(r), z(r), z(r));
@@ -134,7 +126,7 @@ public:
   /// Compute the groups at the given level of detail, reusing work from an
   /// earlier call by the same instance of View for the same instance of State.
   /// (If not given, as usual for a fresh start, then compute everything).
-  Groups groups(Groups const &prior = {}) const {
+  [[nodiscard]] Groups groups(Groups const &prior = {}) const {
     if (!mask || s.particles.empty())
       // !mask <-> halt. Sentinel used by `refine()`.
       return {};
