@@ -8,7 +8,7 @@
 #include <cmath>
 #include <complex>
 #include <cstdio>
-#include <morton.h>
+#include <barnes_hut.h>
 #include <numbers>
 #include <optional>
 #include <random>

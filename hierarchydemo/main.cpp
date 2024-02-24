@@ -5,7 +5,6 @@
 #include <bit>
 #include <cmath>
 #include <complex>
-#include <morton.h>
 #include <numbers>
 #include <optional>
 #include <random>
@@ -31,7 +30,7 @@ struct Particle {
       return {};
   }
   static std::optional<uint64_t> morton(std::complex<float> p) {
-    return dyn::fixedmorton32(p);
+    return dyn::bh32::fixedmorton32(p);
   }
   static std::optional<uint64_t> morton(Particle const &p) {
     return morton(p.xy);

@@ -8,5 +8,5 @@ add_library(dyn INTERFACE
         circle.h
         verlet.h
         barnes_hut.h
-        morton.h)
+)
 target_include_directories(dyn INTERFACE .)

@@ -1,7 +1,7 @@
 #include <algorithm>
 #include <array>
+#include <barnes_hut.h>
 #include <deque>
-#include <morton.h>
 #include <random>
 #include <raylib.h>
 #include <vector>
@@ -23,7 +23,7 @@ bool show() {
   long constexpr N_PARTICLES = 5000, MAX_N_QUEUE = N_PARTICLES / 4;
   float constexpr RADIUS = 0.0078125f, SATURATION = 0.75f, LIGHTNESS = 0.66f;
   uint64_t constexpr MASK = 0xffff'ffff'ffff'0000;
-  auto const MORTON = dyn::fixedmorton32<512>;
+  auto const MORTON = dyn::bh32::fixedmorton32<512>;
 
   std::random_device seed;
   std::mt19937 rng(seed());
@@ -107,10 +107,10 @@ bool show() {
       }
       q = (q + 1) % N_PARTICLES;
       {
-        auto code = dyn::fixedmorton32<512>(pp[0]).value() & MASK;
+        auto code = dyn::bh32::fixedmorton32<512>(pp[0]).value() & MASK;
         for (;;) {
           auto proj = [MASK](auto c) -> std::optional<uint64_t> {
-            if (auto d = dyn::fixedmorton32<512>(c); d.has_value()) {
+            if (auto d = dyn::bh32::fixedmorton32<512>(c); d.has_value()) {
               return d.value() & MASK;
             } else {
               return {};
@@ -149,7 +149,7 @@ bool show() {
           last++;
           if (last == pp.end())
             break;
-          if (auto c = dyn::fixedmorton32<512>(*last); c.has_value()) {
+          if (auto c = dyn::bh32::fixedmorton32<512>(*last); c.has_value()) {
             code = c.value() & MASK;
           } else
             break;
@@ -174,7 +174,10 @@ int do_main() {
 }
 
 #if defined(_WIN32)
-int WinMain(void **_0, void **_1, void **_2, int _3) { return do_main(); }
+#define U [[maybe_unused]]
+int WinMain(U void **_0, U void **_1, U void **_2, U int _3) {
+  return do_main();
+}
 #else
 int main() { return do_main(); }
 #endif
