@@ -48,7 +48,7 @@ constexpr uint64_t interleave32(uint32_t re, uint32_t im) {
 /// If either component is not a finite number after the scaling, the result
 /// is {} (no value).
 template <uint32_t Precision = 512>
-std::optional<uint64_t> fixedmorton32(std::complex<float> xy) {
+std::optional<uint64_t> morton(std::complex<float> xy) {
   xy *= float(Precision);
   if (std::abs(xy.real()) < float(INT32_MAX) &&
       std::abs(xy.imag()) < float(INT32_MAX)) {

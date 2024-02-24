@@ -30,7 +30,7 @@ struct Particle {
       return {};
   }
   static std::optional<uint64_t> morton(std::complex<float> p) {
-    return dyn::bh32::fixedmorton32(p);
+    return dyn::bh32::morton(p);
   }
   static std::optional<uint64_t> morton(Particle const &p) {
     return morton(p.xy);
