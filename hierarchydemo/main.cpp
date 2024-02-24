@@ -88,7 +88,7 @@ class State {
   friend class View;
 
 public:
-  State(int N = 10'000) {
+  State(int N = 50'000) {
     std::mt19937 r(1234);
     std::normal_distribution<float> z;
     for (auto i = 0; i < N; i++)
@@ -129,7 +129,7 @@ public:
   /// (call `refine` to shift gear to a higher level of detail).
   View(State const &s) : s(s) {}
 
-  using Groups = std::list<Group<decltype(s.particles.cbegin())>>;
+  using Groups = std::vector<Group<decltype(s.particles.cbegin())>>;
 
   /// Compute the groups at the given level of detail, reusing work from an
   /// earlier call by the same instance of View for the same instance of State.
@@ -186,15 +186,18 @@ public:
 };
 
 static int do_main() {
-  // Prepare the particles, and then Z-sort them.
-  State state;
-
   SetConfigFlags(FLAG_WINDOW_RESIZABLE);
   InitWindow(600, 600, "X");
   SetTargetFPS(60);
 
+  // Prepare the particles, and then Z-sort them.
+  State state;
+
   // (Auxiliary object for GUI).
   User user;
+
+  // (Re-use memory when computing groups).
+  std::vector<View::Groups> levels;
 
   // Performance is highly sensitive to value (tangent of half of viewing angle)
   //  Smaller angle: bad for performance, ostensibly more "accurate"
@@ -263,30 +266,38 @@ static int do_main() {
       View view{state};
 
       // For a realistic scenario, generate all the levels at once.
-      std::list<View::Groups> levels{view.groups()};
+      levels.clear();
+      levels.emplace_back(view.groups());
       do {
-        levels.push_back(view.groups(levels.back()));
+        // As expected, presents the greatest bottleneck.
+        levels.emplace_back(view.groups(levels.back()));
         view.refine();
       } while (!levels.back().empty());
       levels.pop_back();
 
       // Remove adjacent duplicate layers.
-      levels.unique();
+      // (Ordered by inclusion; elements closer to begin() are either supersets
+      // of or disjoint to the elements closer to end()).
+      auto last = std::unique(levels.begin(), levels.end());
 
       // Traverse on copies. (Required to do so because it's a prototype to the
-      // real one, which requires working on cheap copies.)
-      // Work in adjacent pairs of layers from the first to last. In each pair
-      // of layers, only accept the groups (elements of the layers) that are
-      // subsets of the other layer's groups, and trim the rest.
-      if (!levels.empty()) {
-        auto prior{levels.front()};
+      // real one, which requires the tree to be built once per frame and then
+      // traversed from top level to bottom level by copy.) Work in adjacent
+      // pairs of layers from the first to last. In each pair of layers, only
+      // accept the groups (elements of the layers) that are subsets of the
+      // other layer's groups, and trim the rest.
+      if (levels.begin() != last) {
+        auto prior{*levels.begin()};
         auto begin = levels.begin();
-        while (++begin != levels.end()) {
+
+        // Re-use allocated memory.
+        decltype(prior) copy;
+        while (++begin != last) {
+          copy.clear();
           auto const &novel = *begin;
-          decltype(prior) copy;
           auto pg = prior.begin();
           auto ng = novel.begin();
-          if (ng == novel.end())
+          if (ng == novel.end() || pg == prior.end())
             break;
           // Skip.
           while (ng->begin() != pg->begin())
@@ -303,6 +314,7 @@ static int do_main() {
           }
           // Process.
           std::erase_if(copy, process);
+          // Break if no more.
           if (copy.empty())
             break;
           prior = copy;
