@@ -2,13 +2,14 @@
 
 #include <algorithm>
 #include <barnes_hut.h>
-#include <bit>
 #include <cmath>
 #include <complex>
+#include <cstdint>
 #include <numbers>
 #include <optional>
 #include <random>
 #include <raylib.h>
+#include <utility>
 #include <vector>
 
 #include "user.h"
@@ -23,8 +24,8 @@ struct Particle {
 
   void update_morton() { morton_code = dyn::bh32::morton(xy); }
 
-  static std::optional<uint64_t> morton(Particle const &p) {
-    return dyn::bh32::morton(p.xy);
+  [[nodiscard]] std::optional<uint64_t> morton() const {
+    return dyn::bh32::morton(xy);
   }
 };
 
@@ -78,10 +79,9 @@ struct State : public std::vector<Particle> {
     // Update the Morton codes.
     for (auto &&p : *this)
       p.update_morton();
-    // At least on MSVC (as of writing), stable_sort is seen to be faster than
-    // sort. I have no idea why. It just is.
+    // Most particles stay where they used to be (if being called again).
     std::ranges::stable_sort(begin(), end(), {},
-                             [](auto &&p) { return p.morton_code; });
+                             [](auto &&p) { return p.morton(); });
   }
 };
 
@@ -128,18 +128,20 @@ static int do_main() {
       // or if all the particles could be discarded (REMOVE).
       auto process = [&user, w_mouse, tan_angle_threshold,
                       max_view_distance](auto &&g) {
-        auto dist = std::abs(g.xy - w_mouse);
+        auto gxy = g.data.xy;
+        auto gr = g.data.radius;
+        auto dist = std::abs(gxy - w_mouse);
         // Eliminate the group (g) and all its descendant particles if the given
         // point (w_mouse) is far away from the boundary of the group's circle.
-        if (max_view_distance < dist - g.radius)
+        if (max_view_distance < dist - gr)
           return ERASE;
         auto square = [](auto x) { return x * x; };
         auto dim = 1.0f - square(dist / max_view_distance); // [0, 1] closed.
         if (g.single())
           // This group (g) wraps a single particle.
-          return user.dot(g.xy, Fade(WHITE, dim)), ERASE;
+          return user.dot(gxy, Fade(WHITE, dim)), ERASE;
         // Test the distance and the (approximate) viewing angle.
-        if (dist < g.radius)
+        if (dist < gr)
           // This group (g)'s circle contains the given point (w_mouse).
           // Higher level of detail required.
           return KEEP;
@@ -149,13 +151,12 @@ static int do_main() {
         // endpoint and the ray of the line of sight. This is an
         // underapproximation (but a good one) of one-half of the true view
         // angle.
-        if (auto tan = g.radius / dist; tan_angle_threshold < tan)
+        if (auto tan = gr / dist; tan_angle_threshold < tan)
           // View angle too wide; higher detail required.
           return KEEP;
         // View angle is small enough. Treat g as a point particle. Draw the
         // circle that represents g for visualization.
-        DrawCircleLinesV({g.xy.real(), g.xy.imag()}, g.radius,
-                         Fade(YELLOW, dim));
+        DrawCircleLinesV({gxy.real(), gxy.imag()}, gr, Fade(YELLOW, dim));
         return ERASE;
       };
 
@@ -164,6 +165,7 @@ static int do_main() {
       // Require Z-sorted particles in state.
       bh::View<Physicals, const State &> view{state};
       auto levels = bh::levels(view, [](auto &&p) { return p.morton(); });
+      bh::run(levels, process);
     }
     EndMode2D();
 

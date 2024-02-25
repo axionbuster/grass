@@ -93,7 +93,7 @@ template <typename E, typename I> struct Group {
     first = g_first->first;
     last = g_last->last;
     while (g_first != g_last)
-      data += g_first++->data();
+      data += g_first++->data;
   }
   [[nodiscard]] I begin() { return first; }
   [[nodiscard]] I end() { return last; }
@@ -128,12 +128,17 @@ public:
   /// @param z Take the particle and then compute the Morton code.
   /// @param prior The result of this function call for one finer level of
   /// detail.
-  Groups groups(auto &&z, auto const &prior = {}) const {
+  Groups groups(auto &&z, Groups const &prior = {}) const {
     if (!mask || s.begin() == s.end())
       return {};
-    decltype(groups(z, prior)) novel;
+    Groups novel{};
     auto m = mask;
-    auto z_masked = [m, &z](auto &&p) { return z(p) & m; };
+    auto z_masked = [m, &z](auto &&p) -> std::optional<uint64_t> {
+      if (auto w = z(p); w.has_value())
+        return w.value() & m;
+      else
+        return {};
+    };
     auto grp = [&novel](auto f, auto l) { novel.emplace_back(f, l); };
     if (prior.empty())
       return group(s.begin(), s.end(), z_masked, grp), novel;
@@ -141,9 +146,10 @@ public:
     // Merge the groups, then, instead of recalculating everything.
     // Two-pointer solution: g and j are iterators to the groups in `prior`.
     auto g = prior.begin(), j = g;
-    auto a = z_masked(g->first); // Merger by having the same z-prefixes (a, b).
+    // Merger by having the same z-prefixes (a, b).
+    auto a = z_masked(*g->first);
     while (++j != prior.end()) {
-      auto b = z_masked(g->first);
+      auto b = z_masked(*g->first);
       // If same prefix, don't do anything specific.
       if (a != b) {
         // New prefix. Treat j as past-the-end group.
@@ -163,14 +169,14 @@ public:
 };
 
 template <class E, class S> auto levels(View<E, S> &view, auto &&z) {
-  std::vector<decltype(view.groups(z))> l{};
-  l.push_back(view.groups());
+  auto a = view.groups(z);
+  auto l = std::vector<decltype(a)>{std::move(a)};
   do
     l.push_back(view.groups(z, l.back()));
   while (view.coarser(), !l.back().empty());
   l.pop_back();
   auto last = std::unique(l.begin(), l.end());
-  std::erase(last, l.end());
+  l.erase(last, l.end());
   return l;
 }
 
@@ -179,7 +185,7 @@ void run(auto &&levels, auto &&process) {
     auto prior{*levels.rbegin()};
     auto begin = levels.rbegin();
     // Re-use allocated memory.
-    decltype(prior) copy;
+    decltype(prior) copy{};
     while (++begin != levels.rend()) {
       copy.clear();
       auto const &novel = *begin;
