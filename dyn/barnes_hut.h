@@ -46,30 +46,6 @@ constexpr uint64_t interleave32(uint32_t re, uint32_t im) {
   // Imaginary first.
   return W[0] | (W[1] << 1);
 }
-
-/// @brief Group consecutive particles with the same Z-code given a Z-sorted
-/// range of particles. (A Z-code is also known as a Morton code).
-/// @param begin Starting iterator for the particles.
-/// @param end Past-the-end iterator for the particles, possibly equal to begin.
-/// @param z Given what is like a const lvalue reference to a particle, compute
-/// its z-code, perhaps masked (low bits flushed to zero). The return values of
-/// `z` satisfy this contract: If `a` is returned by a call to `z`, then a == a.
-/// @param g Callback with two arguments, both iterators to the particles, to
-/// be called when a range of particles is announced.
-void group(auto begin, auto const end, auto &&z, auto &&g) {
-  while (begin != end) {
-    // Apply binary search for the consecutive range.
-    // (Same Z-code as *begin).
-    auto [first, last] = std::ranges::equal_range(begin, end, z(*begin), {}, z);
-
-    // Assume that first != last due to the contract fulfilled by `equal_range`,
-    // and the reflexivity of equality comparison (==) of the return values of
-    // `z` (an important precondition).
-
-    // Reset `begin` and then announce it (g).
-    g(first, begin = last);
-  }
-}
 } // namespace detail
 
 /// @brief Compute the Morton (Z) code of a complex number xy assuming a squared
@@ -165,10 +141,12 @@ public:
     auto prefix = [&z, m](auto &&p) { return z(p, m); };
 
     if (prior.empty()) {
-      // First call? No problem. Construct the groups.
+      // First call? No problem. Turn each particle into a group.
       Groups<E> novel{};
-      auto push = [&novel](auto f, auto l) { novel.emplace_back(f, l); };
-      detail::group(s.begin(), s.end(), prefix, push);
+      for (auto i = s.begin(); i != s.end(); ++i) {
+        auto j = i;
+        novel.emplace_back(i, ++j);
+      }
       return novel;
     }
 
@@ -239,7 +217,7 @@ void run(auto const &levels, auto &&process) {
   while (++begin != levels.rend()) {
     auto const &novel = *begin;
     // copy: Filtered copy of `novel`.
-    decltype(prior) copy;
+    decltype(prior) copy{};
     // Iterators to a prior group (pg) and a novel group (ng).
     auto pg = prior.begin();
     auto ng = novel.begin();
