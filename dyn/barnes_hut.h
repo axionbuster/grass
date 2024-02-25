@@ -85,14 +85,16 @@ void group(auto begin, auto const end, auto &&z, auto &&grp) {
 /// construction, and it can be updated using the `+=` operator with an E object
 template <typename E, typename I> struct Group {
   I first, last;
-  E data;
+  E data{};
   /// Create a group of particles using iterators to particles.
   Group(I first, I last) : first{first}, last{last}, data{first, last} {}
   Group(auto g_first, auto g_last) {
     first = g_first->first;
     last = g_last->last;
-    while (g_first != g_last)
-      data += g_first++->data;
+    while (g_first != g_last) {
+      data.merge(g_first->data, g_first->first, g_first->last);
+      ++g_first;
+    }
   }
   [[nodiscard]] I begin() { return first; }
   [[nodiscard]] I end() { return last; }
@@ -104,7 +106,7 @@ template <typename E, typename I> struct Group {
     auto a{first};
     return ++a == last;
   }
-  /// Test: Are the iterators equal (discarding xy and radius)?
+  /// Test: Are the iterators equal (disregarding `data`)?
   [[nodiscard]] bool operator==(Group const &g) const {
     // Ignore extra data.
     return this == &g || (first == g.first && last == g.last);
@@ -163,11 +165,12 @@ public:
   void coarser() { mask <<= 2; }
 };
 
-auto levels(auto &&view, auto &&storage = {}) {
-  storage.clear();
+template <class E, class S, template <class G> class Groups>
+auto levels(View<E, S, Groups> &view, auto &&z) {
+  std::vector<decltype(view.groups(z))> storage{};
   storage.push_back(view.groups());
   do {
-    storage.push_back(view.groups(storage.back()));
+    storage.push_back(view.groups(z, storage.back()));
     view.coarser();
   } while (!storage.back().empty());
   storage.pop_back();

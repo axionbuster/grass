@@ -46,29 +46,22 @@ struct Particle {
 /// Used for signaling in the Barnes-Hut iteration.
 enum { KEEP = 0, ERASE = 1 };
 
-/// Barnes-Hut "group" of particles
-template <typename I> struct Group {
-  I first, last;
+struct Physicals {
   std::complex<float> xy;
-  float radius{};
-  Group() = default;
-  Group(I first, I last) : first(first), last(last) {}
-  [[nodiscard]] I begin() { return first; }
-  [[nodiscard]] I end() { return last; }
-  [[nodiscard]] I begin() const { return first; }
-  [[nodiscard]] I end() const { return last; }
-  [[nodiscard]] bool single() const {
-    if (first == last)
-      return false;
-    auto a{first};
-    return ++a == last;
+  float radius{}, count{};
+
+  Physicals() = default;
+  template <class I> Physicals(I first, I last) {
+    auto f = first;
+    while (f != last)
+      xy += (f++->xy - xy) / ++count;
+    f = first;
+    while (f != last)
+      radius = std::max(radius, std::abs(f++->xy - xy));
   }
-  /// Test: Are the iterators equal (discarding xy and radius)?
-  [[nodiscard]] bool operator==(Group const &g) const {
-    if (this == &g)
-      return true;
-    // Ignore: xy, radius.
-    return first == g.first && last == g.last;
+
+  template <class I> void merge(Physicals &p, I first, I last) {
+
   }
 };
 
@@ -76,7 +69,6 @@ template <typename I> struct Group {
 class State {
   /// A list of particles.
   std::vector<Particle> particles;
-  friend class View;
 
 public:
   State(int N = 50'000) {
@@ -106,76 +98,6 @@ public:
   [[nodiscard]] size_t size() const { return particles.size(); }
 };
 
-/// Build groups, do Barnes-Hut stuff
-class View {
-  State const &s;
-
-  // Start fully general (from the lowest level of detail).
-  //  (0xffff....ffff is the highest level of detail).
-  uint64_t mask = 0xc000'0000'0000'0000;
-
-public:
-  /// Take an immutable view to a table of particles.
-  /// Start with the lowest level of detail
-  /// (call `refine` to shift gear to a higher level of detail).
-  View(State const &s) : s(s) {}
-
-  using Groups = std::vector<Group<decltype(s.particles.cbegin())>>;
-
-  /// Compute the groups at the given level of detail, reusing work from an
-  /// earlier call by the same instance of View for the same instance of State.
-  /// (If not given, as usual for a fresh start, then compute everything).
-  [[nodiscard]] Groups groups(Groups const &prior = {}) const {
-    if (!mask || s.particles.empty())
-      // !mask <-> halt. Sentinel used by `refine()`.
-      return {};
-    Groups novel;
-    auto m = mask;
-    auto z = [m](auto &&p) { return p.morton_masked(m); };
-    auto grp = [&novel](auto f, auto l) { novel.push_back({f, l}); };
-    if (prior.empty())
-      // First time? Compute everything.
-      dyn::bh32::group(s.particles.cbegin(), s.particles.cend(), z, grp);
-    else
-      // Subdivide group (g) knowing that no particle can jump through adjacent
-      // groups by construction (sorted by Z-code, particles belong to disjoint
-      // squares).
-      for (auto &&g : prior)
-        dyn::bh32::group(g.begin(), g.end(), z, grp);
-    // Test: same nodes pointing to the same particles? (ignoring physical
-    // summary).
-    if (prior == novel)
-      // Since loop below is hot, if point to same particles, reuse the work.
-      // Return `prior` which has the physical summary calculated.
-      // Don't return `novel`: it has zeroes instead of actual physical data.
-      return prior;
-    // Compute physical summary.
-    // Position, radius.
-    for (auto &&g : novel) {
-      // Welford's online mean algorithm: compute mean xy for all particles
-      // (p) in the group (g).
-      float n{};
-      for (auto &&p : g)
-        g.xy += (p.xy - g.xy) / ++n;
-      // Compute min radius to contain all particles (p).
-      for (auto &&p : g)
-        g.radius = std::max(g.radius, std::abs(p.xy - g.xy));
-    }
-    return novel;
-  }
-
-  /// Shift to the next (higher) level of detail.
-  void refine() {
-    if (mask == 0xffff'ffff'ffff'ffff)
-      // Signal `groups` to produce nothing and halt.
-      mask = 0;
-    // Apply arithmetic (sign-bit-extending) bit shift by two bits.
-    // (Z-codes (aka Morton codes) use two bits to designate each quadrant.)
-    auto m = std::bit_cast<int64_t>(mask);
-    mask = std::bit_cast<uint64_t>(m >> 2);
-  }
-};
-
 static int do_main() {
   SetConfigFlags(FLAG_WINDOW_RESIZABLE);
   InitWindow(600, 600, "X");
@@ -186,9 +108,6 @@ static int do_main() {
 
   // (Auxiliary object for GUI).
   User user;
-
-  // (Re-use memory when computing groups).
-  std::vector<View::Groups> levels;
 
   // Performance is highly sensitive to value (tangent of half of viewing angle)
   //  Smaller angle: bad for performance, ostensibly more "accurate"
@@ -255,62 +174,6 @@ static int do_main() {
 
       // Require Z-sorted particles in state.
       View view{state};
-
-      // For a realistic scenario, generate all the levels at once.
-      levels.clear();
-      levels.emplace_back(view.groups());
-      do {
-        // As expected, presents the greatest bottleneck.
-        levels.emplace_back(view.groups(levels.back()));
-        view.refine();
-      } while (!levels.back().empty());
-      levels.pop_back();
-
-      // Remove adjacent duplicate layers.
-      // (Ordered by inclusion; elements closer to begin() are either supersets
-      // of or disjoint to the elements closer to end()).
-      auto last = std::unique(levels.begin(), levels.end());
-
-      // Traverse on copies. (Required to do so because it's a prototype to the
-      // real one, which requires the tree to be built once per frame and then
-      // traversed from top level to bottom level by copy.) Work in adjacent
-      // pairs of layers from the first to last. In each pair of layers, only
-      // accept the groups (elements of the layers) that are subsets of the
-      // other layer's groups, and trim the rest.
-      if (levels.begin() != last) {
-        auto prior{*levels.begin()};
-        auto begin = levels.begin();
-
-        // Re-use allocated memory.
-        decltype(prior) copy;
-        while (++begin != last) {
-          copy.clear();
-          auto const &novel = *begin;
-          auto pg = prior.begin();
-          auto ng = novel.begin();
-          if (ng == novel.end() || pg == prior.end())
-            break;
-          // Skip.
-          while (ng->begin() != pg->begin())
-            ++ng;
-          // Cull.
-          while (pg != prior.end()) {
-            if (ng->begin() == pg->begin()) {
-              while (ng->end() != pg->end())
-                copy.push_back(*ng++);
-              copy.push_back(*ng++), ++pg;
-            } else
-              while (ng->begin() != pg->begin())
-                ++ng;
-          }
-          // Process.
-          std::erase_if(copy, process);
-          // Break if no more.
-          if (copy.empty())
-            break;
-          prior = copy;
-        }
-      }
     }
     EndMode2D();
 
