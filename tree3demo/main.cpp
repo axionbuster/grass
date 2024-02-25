@@ -23,7 +23,7 @@ struct Particle {
   std::complex<float> xy, v;
   static std::optional<uint64_t> morton(Particle const &n) {
     // 512 = "precision"
-    return dyn::fixedmorton32<512>(n.xy);
+    return dyn::bh32::morton<512>(n.xy);
   }
 };
 
@@ -81,7 +81,7 @@ struct State {
     auto m = std::bit_cast<uint64_t>(mask);
     auto z_masked = [m](auto p) {
       auto xy = p.xy;
-      auto z = dyn::fixedmorton32<512>(xy);
+      auto z = dyn::bh32::morton<512>(xy);
       if (z.has_value())
         return std::optional<uint64_t>{z.value() & m};
       else
@@ -369,7 +369,10 @@ int do_main() {
 }
 
 #if defined(_WIN32)
-int WinMain(void **_0, void **_1, void **_2, int _3) { return do_main(); }
+#define U [[maybe_unused]]
+int WinMain(U void **_0, U void **_1, U void **_2, U int _3) {
+  return do_main();
+}
 #else
 int main() { return do_main(); }
 #endif
