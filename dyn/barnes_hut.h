@@ -213,7 +213,7 @@ template <class E> auto levels(auto &&view, auto &&z) {
   auto l = std::vector<decltype(a)>{std::move(a)};
   do
     // Regurgitate.
-    view.coarser(), l.push_back(view.groups(z, l.back()));
+    view.coarser(), l.emplace_back(view.groups(z, l.back()));
   while (!l.back().empty());
   l.pop_back();
   // Cull consecutive layers with the identical groups.
