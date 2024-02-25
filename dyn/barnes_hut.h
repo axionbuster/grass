@@ -116,6 +116,14 @@ template <class S, std::unsigned_integral M = uint64_t> class View {
   /// Iterate over particles (`begin` and `end` calls).
   S s;
 
+  // Has a method named `size`?
+  // (Thanks to some wizards on Stack Overflow.)
+  template <class U>
+  static decltype(std::declval<U>().size(), void(), std::true_type()) test(int);
+  template <class> static std::false_type test(...);
+  typedef decltype(test<S>(0)) has_size_test;
+  enum { has_size = has_size_test::value };
+
 public:
   View(S s) : s(s) {}
 
@@ -140,9 +148,12 @@ public:
     std::unsigned_integral auto m = mask;
     auto prefix = [&z, m](auto &&p) { return z(p, m); };
 
+    Groups<E> novel{};
+    if constexpr (has_size)
+      novel.reserve(s.size());
+
     if (prior.empty()) {
       // First call? No problem. Turn each particle into a group.
-      Groups<E> novel{};
       for (auto i = s.begin(); i != s.end(); ++i) {
         auto j = i;
         novel.emplace_back(i, ++j);
@@ -151,8 +162,6 @@ public:
     }
 
     // One finer level of detail exists in `prior`.
-    Groups<E> novel{};
-
     // Merge the groups, then, instead of recalculating everything.
     // Two-pointer solution: g and h are iterators to the groups in `prior`.
     auto g = prior.begin(), h = g;
