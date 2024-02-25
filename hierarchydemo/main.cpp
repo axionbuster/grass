@@ -21,25 +21,10 @@ struct Particle {
   Particle() = default;
   Particle(float x, float y, float vx, float vy) : xy{x, y}, v{vx, vy} {}
 
-  void update_morton() { morton_code = morton(xy); }
+  void update_morton() { morton_code = dyn::bh32::morton(xy); }
 
-  [[nodiscard]] std::optional<uint64_t> morton_masked(uint64_t mask) const {
-    if (morton_code.has_value())
-      return morton_code.value() & mask;
-    else
-      return {};
-  }
-  static std::optional<uint64_t> morton(std::complex<float> p) {
-    return dyn::bh32::morton(p);
-  }
   static std::optional<uint64_t> morton(Particle const &p) {
-    return morton(p.xy);
-  }
-  static std::optional<uint64_t> morton(std::complex<float> p, uint64_t mask) {
-    if (auto z = morton(p); z.has_value())
-      return z.value() & mask;
-    else
-      return {};
+    return dyn::bh32::morton(p.xy);
   }
 };
 
@@ -51,6 +36,7 @@ struct Physicals {
   float radius{}, count{};
 
   Physicals() = default;
+
   template <class I> Physicals(I first, I last) {
     auto f = first;
     while (f != last)
@@ -60,42 +46,43 @@ struct Physicals {
       radius = std::max(radius, std::abs(f++->xy - xy));
   }
 
-  template <class I> void merge(Physicals &p, I first, I last) {
-
+  Physicals &operator+=(Physicals const &p) {
+    if (this == &p)
+      return count *= 2.0f, *this;
+    std::complex<double> xyd{xy};
+    xyd += (std::complex<double>{p.xy} * double(p.count) - xyd) /
+           double(count += p.count);
+    xy = std::complex<float>(xyd);
+    radius = std::max(radius, p.radius + std::abs(p.xy - xy));
+    return *this;
   }
 };
 
 /// Store particles
-class State {
-  /// A list of particles.
-  std::vector<Particle> particles;
-
-public:
+struct State : public std::vector<Particle> {
   State(int N = 50'000) {
     std::mt19937 r(std::random_device{}());
     std::normal_distribution<float> z;
     for (auto i = 0; i < N; i++)
-      particles.emplace_back(z(r), z(r), z(r), z(r));
+      emplace_back(z(r), z(r), z(r), z(r));
     sort();
   }
 
   void fly(float dt) {
-    for (auto &&p : particles)
+    for (auto &&p : *this)
       p.xy += dt * p.v;
     sort();
   }
 
   void sort() {
     // Update the Morton codes.
-    for (auto &&p : particles)
+    for (auto &&p : *this)
       p.update_morton();
     // At least on MSVC (as of writing), stable_sort is seen to be faster than
     // sort. I have no idea why. It just is.
-    std::ranges::stable_sort(particles.begin(), particles.end(), {},
+    std::ranges::stable_sort(begin(), end(), {},
                              [](auto &&p) { return p.morton_code; });
   }
-
-  [[nodiscard]] size_t size() const { return particles.size(); }
 };
 
 static int do_main() {
@@ -172,8 +159,11 @@ static int do_main() {
         return ERASE;
       };
 
+      namespace bh = dyn::bh32;
+
       // Require Z-sorted particles in state.
-      View view{state};
+      bh::View<Physicals, const State &> view{state};
+      auto levels = bh::levels(view, [](auto &&p) { return p.morton(); });
     }
     EndMode2D();
 

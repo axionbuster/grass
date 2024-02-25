@@ -91,10 +91,8 @@ template <typename E, typename I> struct Group {
   Group(auto g_first, auto g_last) {
     first = g_first->first;
     last = g_last->last;
-    while (g_first != g_last) {
-      data.merge(g_first->data, g_first->first, g_first->last);
-      ++g_first;
-    }
+    while (g_first != g_last)
+      data += g_first++->data();
   }
   [[nodiscard]] I begin() { return first; }
   [[nodiscard]] I end() { return last; }
@@ -113,8 +111,7 @@ template <typename E, typename I> struct Group {
   }
 };
 
-template <class E, class S, template <class G> class Groups = std::vector>
-class View {
+template <class E, class S> class View {
   /// Mask (begin with the finest detail, first).
   uint64_t mask = 0xffff'ffff'ffff'ffff;
 
@@ -124,17 +121,16 @@ class View {
 public:
   View(S s) : s(s) {}
 
-  /// The return type of `groups`.
-  using Return = Groups<Group<E, decltype(s.begin())>>;
+  using Groups = std::vector<Group<E, decltype(s.begin())>>;
 
   /// Compute the groups at the current level of detail.
   /// @param z Take the particle and then compute the Morton code.
   /// @param prior The result of this function call for one finer level of
   /// detail.
-  Return groups(auto &&z, auto const &prior = {}) const {
+  Groups groups(auto &&z, auto const &prior = {}) const {
     if (!mask || s.begin() == s.end())
       return {};
-    Return novel;
+    decltype(groups(z, prior)) novel;
     auto m = mask;
     auto z_masked = [m, &z](auto &&p) { return z(p) & m; };
     auto grp = [&novel](auto f, auto l) { novel.emplace_back(f, l); };
@@ -147,13 +143,13 @@ public:
     auto a = z_masked(g->first); // Merger by having the same z-prefixes (a, b).
     while (++j != prior.end()) {
       auto b = z_masked(g->first);
+      // If same prefix, don't do anything specific.
       if (a != b) {
         // New prefix. Treat j as past-the-end group.
         novel.emplace_back(g, j);
         g = j;
         a = b;
       }
-      // Same prefix. Nothing happens.
     }
     // Handle runoff.
     if (g != j)
@@ -165,18 +161,16 @@ public:
   void coarser() { mask <<= 2; }
 };
 
-template <class E, class S, template <class G> class Groups>
-auto levels(View<E, S, Groups> &view, auto &&z) {
-  std::vector<decltype(view.groups(z))> storage{};
-  storage.push_back(view.groups());
-  do {
-    storage.push_back(view.groups(z, storage.back()));
-    view.coarser();
-  } while (!storage.back().empty());
-  storage.pop_back();
-  auto last = std::unique(storage.begin(), storage.end());
-  std::erase(last, storage.end());
-  return storage;
+template <class E, class S> auto levels(View<E, S> &view, auto &&z) {
+  std::vector<decltype(view.groups(z))> l{};
+  l.push_back(view.groups());
+  do
+    l.push_back(view.groups(z, l.back()));
+  while (view.coarser(), !l.back().empty());
+  l.pop_back();
+  auto last = std::unique(l.begin(), l.end());
+  std::erase(last, l.end());
+  return l;
 }
 
 void run(auto &&levels, auto &&process) {
