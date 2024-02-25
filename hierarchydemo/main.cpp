@@ -14,45 +14,68 @@
 
 #include "user.h"
 
-/// Particle with location and velocity.
+/// Particle with position and velocity.
 struct Particle {
+  /// Position and velocity
   std::complex<float> xy, v;
+
+  /// Since the Morton (Z) code calculation has a huge overhead
+  /// (thought to be mostly due to floating-point-to-integer conversion), it's
+  /// good to precompute them.
   std::optional<uint64_t> morton_code{};
 
   Particle() = default;
+
   Particle(float x, float y, float vx, float vy) : xy{x, y}, v{vx, vy} {}
 
+  /// Compute the Morton (Z) code and save it. The internal morton code may
+  /// still have no value if a floating-point issue occurs (for instance,
+  /// value too big).
   void update_morton() { morton_code = dyn::bh32::morton(xy); }
 
+  /// Recall the last stored Morton (Z) code.
   [[nodiscard]] std::optional<uint64_t> morton() const { return morton_code; }
 };
 
-/// Used for signaling in the Barnes-Hut iteration.
-enum { KEEP = 0, ERASE = 1 };
-
+/// "Extra data" stored for a Barnes-Hut tree node. A circle.
 struct Physicals {
+  /// Center
   std::complex<float> xy;
+
+  /// Radius and number of particles (integer).
+  /// (Integers in floating points to avoid integer-float conversions).
   float radius{}, count{};
+
+  // Three required member functions (by `dyn::bh32::View::groups`):
+  //  1. No-argument constructor.
+  //  2. Constructor given a range of particles.
+  //  3. Merger function using (+=).
 
   Physicals() = default;
 
+  /// Given a range of particles (with an `xy` field), compute the quantities.
   template <class I> Physicals(I first, I last) {
     auto f = first;
     while (f != last)
+      // Welford's online average algorithm.
       xy += (f++->xy - xy) / ++count;
     f = first;
     while (f != last)
       radius = std::max(radius, std::abs(f++->xy - xy));
   }
 
+  /// Merge p's information.
   Physicals &operator+=(Physicals const &p) {
     if (this == &p)
+      // Cannot violate const contract.
       return count *= 2.0f, *this;
+    // Compute the new average xy.
     auto sum = count + p.count;
     auto proportion0 = count / sum;
     auto proportion1 = p.count / sum;
-    count += p.count;
     xy = proportion0 * xy + proportion1 * p.xy;
+    // The rest.
+    count += p.count;
     radius = std::max(radius, p.radius + std::abs(p.xy - xy));
     return *this;
   }
@@ -60,6 +83,7 @@ struct Physicals {
 
 /// Store particles
 struct State : public std::vector<Particle> {
+  /// Construct a few particles.
   State(int N = 50'000) {
     std::mt19937 r(std::random_device{}());
     std::normal_distribution<float> z;
@@ -68,19 +92,24 @@ struct State : public std::vector<Particle> {
     sort();
   }
 
+  /// Let the particles fly linearly for a while.
+  /// @param dt Time in unit time [T].
   void fly(float dt) {
     for (auto &&p : *this)
       p.xy += dt * p.v;
     sort();
   }
 
+  /// If particle position have been manually edited, call this function to
+  /// maintain the invariant that the particles are Z-ordered.
   void sort() {
     // Update the Morton codes.
     for (auto &&p : *this)
       p.update_morton();
+    // Get the Morton (or "Z") codes.
+    auto z = [](auto &&p) { return p.morton(); };
     // Most particles stay where they used to be (if being called again).
-    std::ranges::stable_sort(begin(), end(), {},
-                             [](auto &&p) { return p.morton(); });
+    std::ranges::stable_sort(begin(), end(), {}, z);
   }
 };
 
@@ -121,6 +150,11 @@ static int do_main() {
 
       // Apply BFS (breadth-first search) to the implicit quadtree.
 
+      // Used for signaling in the Barnes-Hut iteration.
+      // Contract (boolean-convertible) is due to the free function
+      // `dyn::bh32::run`.
+      enum { KEEP = 0, ERASE = 1 };
+
       // For each "group" (bunch of particles considered to have the same
       // level of detail), do whatever is desired, and then decide whether the
       // particles in the group should be considered at the next round (KEEP),
@@ -130,14 +164,14 @@ static int do_main() {
         auto gxy = g.data.xy;
         auto gr = g.data.radius;
         auto dist = std::abs(gxy - w_mouse);
-        // Eliminate the group (g) and all its descendant particles if the given
-        // point (w_mouse) is far away from the boundary of the group's circle.
         if (max_view_distance < dist - gr)
+          // Too far from the boundary of the group's circle.
           return ERASE;
         auto square = [](auto x) { return x * x; };
         auto dim = 1.0f - square(dist / max_view_distance); // [0, 1] closed.
         if (g.single())
           // This group (g) wraps a single particle.
+          // Process and then forget.
           return user.dot(gxy, Fade(WHITE, dim)), ERASE;
         // Test the distance and the (approximate) viewing angle.
         if (dist < gr)
@@ -172,6 +206,7 @@ static int do_main() {
       };
       // Compute the "levels."
       auto levels = bh::levels<Physicals>(view, morton);
+      // Let's go. Draw the circles and particles.
       bh::run(levels, process);
     }
     EndMode2D();

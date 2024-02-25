@@ -11,6 +11,7 @@
 namespace dyn::bh32 {
 
 namespace detail {
+
 /// @brief Interleave the bits of two 32-bit words (re, im) so that the word
 /// im is placed at the odd-numbered bits (including the most significant bit)
 /// while re is placed at the even-numbered bits (including the least
@@ -34,9 +35,10 @@ constexpr uint64_t interleave32(uint32_t re, uint32_t im) {
 
   // Zero-extend each word.
   std::array<uint64_t, 2> W{re, im};
+
+  // Spread the bits out with zeros in between.
+  // (ex) w = 0b1011 -> 0b01'00'01'01
   for (auto &&w : W)
-    // Spread the bits out with zeros in between.
-    // (ex) w = 0b1011 -> 0b01'00'01'01
     for (auto &&h : H)
       w = (w | (w << h.shift)) & h.mask;
 
@@ -44,20 +46,27 @@ constexpr uint64_t interleave32(uint32_t re, uint32_t im) {
   return W[0] | (W[1] << 1);
 }
 
-/// @brief Group consecutive particles with the same Z-code.
+/// @brief Group consecutive particles with the same Z-code given a Z-sorted
+/// range of particles. (A Z-code is also known as a Morton code).
 /// @param begin Starting iterator for the particles.
 /// @param end Past-the-end iterator for the particles, possibly equal to begin.
 /// @param z Given what is like a const lvalue reference to a particle, compute
-/// its z-code, perhaps masked (low bits flushed to zero).
-/// @param grp Callback with two arguments, both iterators to the particles, to
+/// its z-code, perhaps masked (low bits flushed to zero). The return values of
+/// `z` satisfy this contract: If `a` is returned by a call to `z`, then a == a.
+/// @param g Callback with two arguments, both iterators to the particles, to
 /// be called when a range of particles is announced.
-void group(auto begin, auto const end, auto &&z, auto &&grp) {
+void group(auto begin, auto const end, auto &&z, auto &&g) {
   while (begin != end) {
+    // Apply binary search for the consecutive range.
+    // (Same Z-code as *begin).
     auto [first, last] = std::ranges::equal_range(begin, end, z(*begin), {}, z);
-    if (first != last)
-      grp(first, begin = last);
-    else
-      ++begin;
+
+    // Assume that first != last due to the contract fulfilled by `equal_range`,
+    // and the reflexivity of equality comparison (==) of the return values of
+    // `z` (an important precondition).
+
+    // Reset `begin` and then announce it (g).
+    g(first, begin = last);
   }
 }
 } // namespace detail
@@ -65,13 +74,15 @@ void group(auto begin, auto const end, auto &&z, auto &&grp) {
 /// @brief Compute the Morton (Z) code of a complex number xy assuming a squared
 /// grid by pre-multiplying the factor `Precision` to each component of xy.
 /// If either component is not a finite number after the scaling, the result
-/// is {} (no value).
+/// is {} (no value). It is recommended to cache the answer because of the
+/// typically high overhead of the computation.
 template <uint32_t Precision = 512>
 std::optional<uint64_t> morton(std::complex<float> xy) {
   xy *= float(Precision);
+  // Use a strict inequality because float(INT32_MAX) is actually greater than
+  // INT32_MAX (when both are cast to double).
   if (std::abs(xy.real()) < float(INT32_MAX) &&
       std::abs(xy.imag()) < float(INT32_MAX)) {
-    // unsigned.
     auto sgn = uint32_t(0x8000'0000ul);
     auto x = int32_t(xy.real()) ^ sgn; // promoted to unsigned.
     auto y = int32_t(xy.imag()) ^ sgn; // (ditto).
@@ -94,10 +105,15 @@ template <typename E, typename I> struct Group {
     while (g_first != g_last)
       last = g_first->last, data += g_first++->data;
   }
+  /// Iterate over the particles.
   [[nodiscard]] I begin() { return first; }
+  /// Iterate over the particles.
   [[nodiscard]] I end() { return last; }
+  /// Iterate over the particles.
   [[nodiscard]] I begin() const { return first; }
+  /// Iterate over the particles.
   [[nodiscard]] I end() const { return last; }
+  /// Test whether this group holds exactly one particle.
   [[nodiscard]] bool single() const {
     if (first == last)
       return false;
@@ -133,50 +149,70 @@ public:
   template <class E>
   [[nodiscard]] Groups<E> groups(auto &&z, Groups<E> const &prior = {}) const {
     if (!mask || s.begin() == s.end())
+      // Empty output used as sentinel to halt processing by the free functions:
+      //  - `levels`
+      //  - `run`
       return {};
-    Groups<E> novel{};
+
+    // prefix: Compute the masked Morton (Z) code, which computes the prefix
+    // bits (less significant bits cut off).
     auto m = mask;
-    auto z_masked = [&z, m](auto &&p) { return z(p, m); };
-    auto grp = [&novel](auto f, auto l) { novel.emplace_back(f, l); };
-    if (prior.empty())
-      return detail::group(s.begin(), s.end(), z_masked, grp), novel;
-    // One finer level of detail in `prior`.
+    auto prefix = [&z, m](auto &&p) { return z(p, m); };
+
+    if (prior.empty()) {
+      // First call? No problem. Construct the groups.
+      Groups<E> novel{};
+      auto push = [&novel](auto f, auto l) { novel.emplace_back(f, l); };
+      detail::group(s.begin(), s.end(), prefix, push);
+      return novel;
+    }
+
+    // One finer level of detail exists in `prior`.
+    Groups<E> novel{};
+
     // Merge the groups, then, instead of recalculating everything.
-    // Two-pointer solution: g and j are iterators to the groups in `prior`.
-    auto g = prior.begin(), j = g;
-    // Merger by having the same z-prefixes (a, b).
-    auto a = z_masked(*g->first);
-    while (++j != prior.end()) {
-      auto b = z_masked(*j->first);
+    // Two-pointer solution: g and h are iterators to the groups in `prior`.
+    auto g = prior.begin(), h = g;
+    // Merge groups having the same Morton (Z)-prefixes (a, b).
+    auto a = prefix(*g->first);
+    while (++h != prior.end()) {
+      auto b = prefix(*h->first);
       // If same prefix, don't do anything specific.
+      // If new prefix, create a group by merging many groups.
       if (a != b) {
-        // New prefix. Treat j as past-the-end group.
-        novel.emplace_back(g, j);
-        g = j;
+        // Yes, new prefix. Treat h as past-the-end iterator to the range of
+        // groups. Pass g and h to the "range of groups" constructor of Group.
+        novel.emplace_back(g, h);
+        g = h;
         a = b;
       }
     }
     // Handle runoff.
-    if (g != j)
-      novel.emplace_back(g, j);
+    if (g != h)
+      novel.emplace_back(g, h);
     return novel;
   }
 
   /// Make the level of detail one level coarser.
-  void coarser() { mask <<= 2; }
+  void coarser() {
+    // Let `mask` run off to zero if at last level of detail.
+    mask <<= 2;
+  }
 };
 
 /// Compute all levels given a view and a way to compute the Morton codes given
 /// a particle (see View::groups for information on `z`).
 template <class E> auto levels(auto &&view, auto &&z) {
+  // (Typing hacks)
   auto a = view.template groups<E>(z);
   auto l = std::vector<decltype(a)>{std::move(a)};
   do
+    // Regurgitate.
     view.coarser(), l.push_back(view.groups(z, l.back()));
   while (!l.back().empty());
   l.pop_back();
-  auto last = std::unique(l.begin(), l.end());
-  l.erase(last, l.end());
+  // Cull consecutive layers with the identical groups.
+  l.erase(std::unique(l.begin(), l.end()), l.end());
   return l;
 }
 
@@ -187,20 +223,25 @@ template <class E> auto levels(auto &&view, auto &&z) {
 void run(auto const &levels, auto &&process) {
   if (levels.rbegin() == levels.rend())
     return;
+
+  // Filter `novel` for inclusion in elements in `prior` knowing that the
+  // elements are sorted in Morton order.
   auto begin = levels.rbegin();
   auto prior{*begin};
   while (++begin != levels.rend()) {
-    // Filter `novel` for inclusion in elements in `prior` knowing that the
-    // elements are sorted in Morton order.
-    decltype(prior) copy;
     auto const &novel = *begin;
+    // copy: Filtered copy of `novel`.
+    decltype(prior) copy;
+    // Iterators to a prior group (pg) and a novel group (ng).
     auto pg = prior.begin();
     auto ng = novel.begin();
     if (ng == novel.end() || pg == prior.end())
       break;
+
     // Skip.
     while (ng->begin() != pg->begin())
       ++ng;
+
     // Cull.
     while (pg != prior.end()) {
       if (ng->begin() == pg->begin()) {
@@ -214,9 +255,12 @@ void run(auto const &levels, auto &&process) {
 
     // Process.
     std::erase_if(copy, process);
+
     // Break if no more.
     if (copy.empty())
       break;
+
+    // Learn which branches are kept, which are pruned.
     prior = copy;
   }
 }
