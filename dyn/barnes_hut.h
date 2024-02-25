@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <complex>
+#include <concepts>
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -130,9 +131,11 @@ template <typename E, typename I> struct Group {
 };
 
 /// A view to a set of particles.
-template <class S> class View {
+/// @tparam S A set of particles (begin() and end() iterates over the particles)
+/// @tparam M An unsigned integer type used for masking Morton (Z) codes.
+template <class S, std::unsigned_integral M = uint64_t> class View {
   /// Mask (begin with the finest detail, first).
-  uint64_t mask = 0xffff'ffff'ffff'ffff;
+  M mask = ~M{};
 
   /// Iterate over particles (`begin` and `end` calls).
   S s;
@@ -145,7 +148,7 @@ public:
 
   /// Compute the groups at the current level of detail.
   /// @param z Take the particle and then compute the Morton (Z) code masked by
-  /// the given `uint64_t` mask.
+  /// the given M-type mask.
   /// @param prior The result of this function call for one finer level of
   /// detail.
   template <class E>
