@@ -21,6 +21,8 @@
 
 struct Particle {
   std::complex<float> xy, v;
+  Particle() = default;
+  Particle(std::complex<float> xy, std::complex<float> v) : xy(xy), v(v) {}
   static std::optional<uint64_t> morton(Particle const &n) {
     // 512 = "precision"
     return dyn::bh32::morton<512>(n.xy);
@@ -40,9 +42,9 @@ template <std::default_initializable E, typename I> struct Node {
   I first, last;
   E extra;
   I begin() { return first; }
-  I begin() const { return first; }
+  [[nodiscard]] I begin() const { return first; }
   I end() { return last; }
-  I end() const { return last; }
+  [[nodiscard]] I end() const { return last; }
 };
 
 struct State {
@@ -54,7 +56,7 @@ struct State {
   };
   std::vector<Particle> particles;
   std::vector<Node<NodePhysical, decltype(particles.begin())>> nodes;
-  int64_t mask = 0xffff'ffff'ffff'0000;
+  int64_t mask = std::bit_cast<int64_t>(0xffff'ffff'ffff'0000);
   float angle_threshold = PI / 12.0f;
   bool fly{};
   static State fresh() {
@@ -90,7 +92,8 @@ struct State {
     auto with_node = [this](auto first, auto last) {
       nodes.push_back({first, last, {}});
     };
-    dyn::bh32::group(particles.begin(), particles.end(), z_masked, with_node);
+    dyn::bh32::detail::group(particles.begin(), particles.end(), z_masked,
+                             with_node);
     // Assign the extra data (center and radius).
     for (auto &&n : nodes) {
       std::complex<float> center;
