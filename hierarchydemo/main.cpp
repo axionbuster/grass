@@ -50,10 +50,11 @@ struct Physicals {
   Physicals &operator+=(Physicals const &p) {
     if (this == &p)
       return count *= 2.0f, *this;
-    std::complex<double> xyd{xy};
-    xyd += (std::complex<double>{p.xy} * double(p.count) - xyd) /
-           double(count += p.count);
-    xy = std::complex<float>(xyd);
+    typedef std::complex<double> C;
+    typedef std::complex<float> F;
+    C xyd{xy};
+    xyd += (C{p.xy} / double(p.count) - xyd) / double(++count);
+    xy = F{xyd};
     radius = std::max(radius, p.radius + std::abs(p.xy - xy));
     return *this;
   }
