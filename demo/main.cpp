@@ -286,7 +286,10 @@ static int do_main() {
 
 #if defined(_WIN32)
 
-int WinMain(void **_0, void **_1, void **_2, int _3) { return do_main(); }
+#define U [[maybe_unused]]
+int WinMain(U void **_0, U void **_1, U void **_2, U int _3) {
+  return do_main();
+}
 
 #else
 
