@@ -2,177 +2,114 @@
 
 #include <algorithm>
 #include <barnes_hut.h>
-#include <bit>
 #include <cmath>
 #include <complex>
+#include <cstdint>
 #include <numbers>
 #include <optional>
 #include <random>
 #include <raylib.h>
+#include <utility>
 #include <vector>
 
 #include "user.h"
 
-/// Particle with location and velocity.
+/// Particle with position and velocity.
 struct Particle {
+  /// Position and velocity
   std::complex<float> xy, v;
+
+  /// Since the Morton (Z) code calculation has a huge overhead
+  /// (thought to be mostly due to floating-point-to-integer conversion), it's
+  /// good to precompute them.
   std::optional<uint64_t> morton_code{};
 
   Particle() = default;
+
   Particle(float x, float y, float vx, float vy) : xy{x, y}, v{vx, vy} {}
 
-  void update_morton() { morton_code = morton(xy); }
+  /// Compute the Morton (Z) code and save it. The internal morton code may
+  /// still have no value if a floating-point issue occurs (for instance,
+  /// value too big).
+  void update_morton() { morton_code = dyn::bh32::morton(xy); }
 
-  [[nodiscard]] std::optional<uint64_t> morton_masked(uint64_t mask) const {
-    if (morton_code.has_value())
-      return morton_code.value() & mask;
-    else
-      return {};
-  }
-  static std::optional<uint64_t> morton(std::complex<float> p) {
-    return dyn::bh32::morton(p);
-  }
-  static std::optional<uint64_t> morton(Particle const &p) {
-    return morton(p.xy);
-  }
-  static std::optional<uint64_t> morton(std::complex<float> p, uint64_t mask) {
-    if (auto z = morton(p); z.has_value())
-      return z.value() & mask;
-    else
-      return {};
-  }
+  /// Recall the last stored Morton (Z) code.
+  [[nodiscard]] std::optional<uint64_t> morton() const { return morton_code; }
 };
 
-/// Used for signaling in the Barnes-Hut iteration.
-enum { KEEP = 0, ERASE = 1 };
-
-/// Barnes-Hut "group" of particles
-template <typename I> struct Group {
-  I first, last;
+/// "Extra data" stored for a Barnes-Hut tree node. A circle.
+struct Physicals {
+  /// Center
   std::complex<float> xy;
-  float radius{};
-  Group() = default;
-  Group(I first, I last) : first(first), last(last) {}
-  [[nodiscard]] I begin() { return first; }
-  [[nodiscard]] I end() { return last; }
-  [[nodiscard]] I begin() const { return first; }
-  [[nodiscard]] I end() const { return last; }
-  [[nodiscard]] bool single() const {
-    if (first == last)
-      return false;
-    auto a{first};
-    return ++a == last;
+
+  /// Radius and number of particles (integer).
+  /// (Integers in floating points to avoid integer-float conversions).
+  float radius{}, count{};
+
+  // Three required member functions (by `dyn::bh32::View::groups`):
+  //  1. No-argument constructor.
+  //  2. Constructor given a range of particles.
+  //  3. Merger function using (+=).
+
+  Physicals() = default;
+
+  /// Given a range of particles (with an `xy` field), compute the quantities.
+  template <class I> Physicals(I first, I last) {
+    auto f = first;
+    while (f != last)
+      // Welford's online average algorithm.
+      xy += (f++->xy - xy) / ++count;
+    f = first;
+    while (f != last)
+      radius = std::max(radius, std::abs(f++->xy - xy));
   }
-  /// Test: Are the iterators equal (discarding xy and radius)?
-  [[nodiscard]] bool operator==(Group const &g) const {
-    if (this == &g)
-      return true;
-    // Ignore: xy, radius.
-    return first == g.first && last == g.last;
+
+  /// Merge p's information.
+  Physicals &operator+=(Physicals const &p) {
+    if (this == &p)
+      // Cannot violate const contract.
+      return count *= 2.0f, *this;
+    // Compute the new average xy.
+    auto sum = count + p.count;
+    auto proportion0 = count / sum;
+    auto proportion1 = p.count / sum;
+    xy = proportion0 * xy + proportion1 * p.xy;
+    // The rest.
+    count += p.count;
+    radius = std::max(radius, p.radius + std::abs(p.xy - xy));
+    return *this;
   }
 };
 
 /// Store particles
-class State {
-  /// A list of particles.
-  std::vector<Particle> particles;
-  friend class View;
-
-public:
+struct State : public std::vector<Particle> {
+  /// Construct a few particles.
   State(int N = 50'000) {
     std::mt19937 r(std::random_device{}());
     std::normal_distribution<float> z;
     for (auto i = 0; i < N; i++)
-      particles.emplace_back(z(r), z(r), z(r), z(r));
+      emplace_back(z(r), z(r), z(r), z(r));
     sort();
   }
 
+  /// Let the particles fly linearly for a while.
+  /// @param dt Time in unit time [T].
   void fly(float dt) {
-    for (auto &&p : particles)
+    for (auto &&p : *this)
       p.xy += dt * p.v;
     sort();
   }
 
+  /// If particle position have been manually edited, call this function to
+  /// maintain the invariant that the particles are Z-ordered.
   void sort() {
     // Update the Morton codes.
-    for (auto &&p : particles)
+    for (auto &&p : *this)
       p.update_morton();
-    // At least on MSVC (as of writing), stable_sort is seen to be faster than
-    // sort. I have no idea why. It just is.
-    std::ranges::stable_sort(particles.begin(), particles.end(), {},
-                             [](auto &&p) { return p.morton_code; });
-  }
-
-  [[nodiscard]] size_t size() const { return particles.size(); }
-};
-
-/// Build groups, do Barnes-Hut stuff
-class View {
-  State const &s;
-
-  // Start fully general (from the lowest level of detail).
-  //  (0xffff....ffff is the highest level of detail).
-  uint64_t mask = 0xc000'0000'0000'0000;
-
-public:
-  /// Take an immutable view to a table of particles.
-  /// Start with the lowest level of detail
-  /// (call `refine` to shift gear to a higher level of detail).
-  View(State const &s) : s(s) {}
-
-  using Groups = std::vector<Group<decltype(s.particles.cbegin())>>;
-
-  /// Compute the groups at the given level of detail, reusing work from an
-  /// earlier call by the same instance of View for the same instance of State.
-  /// (If not given, as usual for a fresh start, then compute everything).
-  [[nodiscard]] Groups groups(Groups const &prior = {}) const {
-    if (!mask || s.particles.empty())
-      // !mask <-> halt. Sentinel used by `refine()`.
-      return {};
-    Groups novel;
-    auto m = mask;
-    auto z = [m](auto &&p) { return p.morton_masked(m); };
-    auto grp = [&novel](auto f, auto l) { novel.push_back({f, l}); };
-    if (prior.empty())
-      // First time? Compute everything.
-      dyn::bh32::group(s.particles.cbegin(), s.particles.cend(), z, grp);
-    else
-      // Subdivide group (g) knowing that no particle can jump through adjacent
-      // groups by construction (sorted by Z-code, particles belong to disjoint
-      // squares).
-      for (auto &&g : prior)
-        dyn::bh32::group(g.begin(), g.end(), z, grp);
-    // Test: same nodes pointing to the same particles? (ignoring physical
-    // summary).
-    if (prior == novel)
-      // Since loop below is hot, if point to same particles, reuse the work.
-      // Return `prior` which has the physical summary calculated.
-      // Don't return `novel`: it has zeroes instead of actual physical data.
-      return prior;
-    // Compute physical summary.
-    // Position, radius.
-    for (auto &&g : novel) {
-      // Welford's online mean algorithm: compute mean xy for all particles
-      // (p) in the group (g).
-      float n{};
-      for (auto &&p : g)
-        g.xy += (p.xy - g.xy) / ++n;
-      // Compute min radius to contain all particles (p).
-      for (auto &&p : g)
-        g.radius = std::max(g.radius, std::abs(p.xy - g.xy));
-    }
-    return novel;
-  }
-
-  /// Shift to the next (higher) level of detail.
-  void refine() {
-    if (mask == 0xffff'ffff'ffff'ffff)
-      // Signal `groups` to produce nothing and halt.
-      mask = 0;
-    // Apply arithmetic (sign-bit-extending) bit shift by two bits.
-    // (Z-codes (aka Morton codes) use two bits to designate each quadrant.)
-    auto m = std::bit_cast<int64_t>(mask);
-    mask = std::bit_cast<uint64_t>(m >> 2);
+    // Get the Morton (or "Z") codes.
+    auto z = [](auto &&p) { return p.morton(); };
+    // Most particles stay where they used to be (if being called again).
+    std::ranges::stable_sort(begin(), end(), {}, z);
   }
 };
 
@@ -186,9 +123,6 @@ static int do_main() {
 
   // (Auxiliary object for GUI).
   User user;
-
-  // (Re-use memory when computing groups).
-  std::vector<View::Groups> levels;
 
   // Performance is highly sensitive to value (tangent of half of viewing angle)
   //  Smaller angle: bad for performance, ostensibly more "accurate"
@@ -216,24 +150,31 @@ static int do_main() {
 
       // Apply BFS (breadth-first search) to the implicit quadtree.
 
+      // Used for signaling in the Barnes-Hut iteration.
+      // Contract (boolean-convertible) is due to the free function
+      // `dyn::bh32::run`.
+      enum { KEEP = 0, ERASE = 1 };
+
       // For each "group" (bunch of particles considered to have the same
       // level of detail), do whatever is desired, and then decide whether the
       // particles in the group should be considered at the next round (KEEP),
       // or if all the particles could be discarded (REMOVE).
       auto process = [&user, w_mouse, tan_angle_threshold,
                       max_view_distance](auto &&g) {
-        auto dist = std::abs(g.xy - w_mouse);
-        // Eliminate the group (g) and all its descendant particles if the given
-        // point (w_mouse) is far away from the boundary of the group's circle.
-        if (max_view_distance < dist - g.radius)
+        auto gxy = g.data.xy;
+        auto gr = g.data.radius;
+        auto dist = std::abs(gxy - w_mouse);
+        if (max_view_distance < dist - gr)
+          // Too far from the boundary of the group's circle.
           return ERASE;
         auto square = [](auto x) { return x * x; };
         auto dim = 1.0f - square(dist / max_view_distance); // [0, 1] closed.
         if (g.single())
           // This group (g) wraps a single particle.
-          return user.dot(g.xy, Fade(WHITE, dim)), ERASE;
+          // Process and then forget.
+          return user.dot(gxy, Fade(WHITE, dim)), ERASE;
         // Test the distance and the (approximate) viewing angle.
-        if (dist < g.radius)
+        if (dist < gr)
           // This group (g)'s circle contains the given point (w_mouse).
           // Higher level of detail required.
           return KEEP;
@@ -243,74 +184,30 @@ static int do_main() {
         // endpoint and the ray of the line of sight. This is an
         // underapproximation (but a good one) of one-half of the true view
         // angle.
-        if (auto tan = g.radius / dist; tan_angle_threshold < tan)
+        if (auto tan = gr / dist; tan_angle_threshold < tan)
           // View angle too wide; higher detail required.
           return KEEP;
         // View angle is small enough. Treat g as a point particle. Draw the
         // circle that represents g for visualization.
-        DrawCircleLinesV({g.xy.real(), g.xy.imag()}, g.radius,
-                         Fade(YELLOW, dim));
+        DrawCircleLinesV({gxy.real(), gxy.imag()}, gr, Fade(YELLOW, dim));
         return ERASE;
       };
 
+      namespace bh = dyn::bh32;
+
       // Require Z-sorted particles in state.
-      View view{state};
-
-      // For a realistic scenario, generate all the levels at once.
-      levels.clear();
-      levels.emplace_back(view.groups());
-      do {
-        // As expected, presents the greatest bottleneck.
-        levels.emplace_back(view.groups(levels.back()));
-        view.refine();
-      } while (!levels.back().empty());
-      levels.pop_back();
-
-      // Remove adjacent duplicate layers.
-      // (Ordered by inclusion; elements closer to begin() are either supersets
-      // of or disjoint to the elements closer to end()).
-      auto last = std::unique(levels.begin(), levels.end());
-
-      // Traverse on copies. (Required to do so because it's a prototype to the
-      // real one, which requires the tree to be built once per frame and then
-      // traversed from top level to bottom level by copy.) Work in adjacent
-      // pairs of layers from the first to last. In each pair of layers, only
-      // accept the groups (elements of the layers) that are subsets of the
-      // other layer's groups, and trim the rest.
-      if (levels.begin() != last) {
-        auto prior{*levels.begin()};
-        auto begin = levels.begin();
-
-        // Re-use allocated memory.
-        decltype(prior) copy;
-        while (++begin != last) {
-          copy.clear();
-          auto const &novel = *begin;
-          auto pg = prior.begin();
-          auto ng = novel.begin();
-          if (ng == novel.end() || pg == prior.end())
-            break;
-          // Skip.
-          while (ng->begin() != pg->begin())
-            ++ng;
-          // Cull.
-          while (pg != prior.end()) {
-            if (ng->begin() == pg->begin()) {
-              while (ng->end() != pg->end())
-                copy.push_back(*ng++);
-              copy.push_back(*ng++), ++pg;
-            } else
-              while (ng->begin() != pg->begin())
-                ++ng;
-          }
-          // Process.
-          std::erase_if(copy, process);
-          // Break if no more.
-          if (copy.empty())
-            break;
-          prior = copy;
-        }
-      }
+      bh::View<State const &> view{state};
+      // Masked Morton (Z) code.
+      auto morton = [](auto &&p, uint64_t m) -> std::optional<uint64_t> {
+        if (auto w = p.morton(); w.has_value())
+          return w.value() & m;
+        else
+          return {};
+      };
+      // Compute the "levels."
+      auto levels = bh::levels<Physicals>(view, morton);
+      // Let's go. Draw the circles and particles.
+      bh::run(levels, process);
     }
     EndMode2D();
 
