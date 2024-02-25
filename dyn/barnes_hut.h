@@ -91,9 +91,8 @@ template <typename E, typename I> struct Group {
   Group(I first, I last) : first{first}, last{last}, data{first, last} {}
   Group(auto g_first, auto g_last) {
     first = g_first->first;
-    last = g_last->last;
     while (g_first != g_last)
-      data += g_first++->data;
+      last = g_first->last, data += g_first++->data;
   }
   [[nodiscard]] I begin() { return first; }
   [[nodiscard]] I end() { return last; }
@@ -149,7 +148,7 @@ public:
     // Merger by having the same z-prefixes (a, b).
     auto a = z_masked(*g->first);
     while (++j != prior.end()) {
-      auto b = z_masked(*g->first);
+      auto b = z_masked(*j->first);
       // If same prefix, don't do anything specific.
       if (a != b) {
         // New prefix. Treat j as past-the-end group.
@@ -172,8 +171,8 @@ template <class E, class S> auto levels(View<E, S> &view, auto &&z) {
   auto a = view.groups(z);
   auto l = std::vector<decltype(a)>{std::move(a)};
   do
-    l.push_back(view.groups(z, l.back()));
-  while (view.coarser(), !l.back().empty());
+    view.coarser(), l.push_back(view.groups(z, l.back()));
+  while (!l.back().empty());
   l.pop_back();
   auto last = std::unique(l.begin(), l.end());
   l.erase(last, l.end());
