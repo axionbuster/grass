@@ -5,6 +5,7 @@
 #include <complex>
 #include <cstdint>
 #include <optional>
+#include <vector>
 
 namespace dyn::bh32 {
 
@@ -61,9 +62,13 @@ std::optional<uint64_t> morton(std::complex<float> xy) {
   return {};
 }
 
-/// @brief Given a Z-sorted (Morton-ordered) range and a function to get the
-/// prefix (at an appropriate level of detail) of the Morton code of each
-/// particle, construct an array of Node objects at that level of detail.
+/// @brief Group consecutive particles with the same Z-code.
+/// @param begin Starting iterator for the particles.
+/// @param end Past-the-end iterator for the particles, possibly equal to begin.
+/// @param z Given what is like a const lvalue reference to a particle, compute
+/// its z-code, perhaps masked (low bits flushed to zero).
+/// @param grp Callback with two arguments, both iterators to the particles, to
+/// be called when a range of particles is announced.
 void group(auto begin, auto const end, auto &&z, auto &&grp) {
   while (begin != end) {
     auto [first, last] = std::ranges::equal_range(begin, end, z(*begin), {}, z);
@@ -71,6 +76,139 @@ void group(auto begin, auto const end, auto &&z, auto &&grp) {
       grp(first, begin = last);
     else
       ++begin;
+  }
+}
+
+/// A consecutive group of particles.
+/// @tparam E Extra data (type of field `data`). An E object may be constructed
+/// by passing two iterators to particles ("begin" and "end) or by default
+/// construction, and it can be updated using the `+=` operator with an E object
+template <typename E, typename I> struct Group {
+  I first, last;
+  E data;
+  /// Create a group of particles using iterators to particles.
+  Group(I first, I last) : first{first}, last{last}, data{first, last} {}
+  Group(auto g_first, auto g_last) {
+    first = g_first->first;
+    last = g_last->last;
+    while (g_first != g_last)
+      data += g_first++->data;
+  }
+  [[nodiscard]] I begin() { return first; }
+  [[nodiscard]] I end() { return last; }
+  [[nodiscard]] I begin() const { return first; }
+  [[nodiscard]] I end() const { return last; }
+  [[nodiscard]] bool single() const {
+    if (first == last)
+      return false;
+    auto a{first};
+    return ++a == last;
+  }
+  /// Test: Are the iterators equal (discarding xy and radius)?
+  [[nodiscard]] bool operator==(Group const &g) const {
+    // Ignore extra data.
+    return this == &g || (first == g.first && last == g.last);
+  }
+};
+
+template <class E, class S, template <class G> class Groups = std::vector>
+class View {
+  /// Mask (begin with the finest detail, first).
+  uint64_t mask = 0xffff'ffff'ffff'ffff;
+
+  /// Iterate over particles.
+  S s;
+
+public:
+  View(S s) : s(s) {}
+
+  /// The return type of `groups`.
+  using Return = Groups<Group<E, decltype(s.begin())>>;
+
+  /// Compute the groups at the current level of detail.
+  /// @param z Take the particle and then compute the Morton code.
+  /// @param prior The result of this function call for one finer level of
+  /// detail.
+  Return groups(auto &&z, auto const &prior = {}) const {
+    if (!mask || s.begin() == s.end())
+      return {};
+    Return novel;
+    auto m = mask;
+    auto z_masked = [m, &z](auto &&p) { return z(p) & m; };
+    auto grp = [&novel](auto f, auto l) { novel.emplace_back(f, l); };
+    if (prior.empty())
+      return group(s.begin(), s.end(), z_masked, grp), novel;
+    // One finer level of detail in `prior`.
+    // Merge the groups, then, instead of recalculating everything.
+    // Two-pointer solution: g and j are iterators to the groups in `prior`.
+    auto g = prior.begin(), j = g;
+    auto a = z_masked(g->first); // Merger by having the same z-prefixes (a, b).
+    while (++j != prior.end()) {
+      auto b = z_masked(g->first);
+      if (a != b) {
+        // New prefix. Treat j as past-the-end group.
+        novel.emplace_back(g, j);
+        g = j;
+        a = b;
+      }
+      // Same prefix. Nothing happens.
+    }
+    // Handle runoff.
+    if (g != j)
+      novel.emplace_back(g, j);
+    return novel;
+  }
+
+  /// Make the level of detail one level coarser.
+  void coarser() { mask <<= 2; }
+};
+
+auto levels(auto &&view, auto &&storage = {}) {
+  storage.clear();
+  storage.push_back(view.groups());
+  do {
+    storage.push_back(view.groups(storage.back()));
+    view.coarser();
+  } while (!storage.back().empty());
+  storage.pop_back();
+  auto last = std::unique(storage.begin(), storage.end());
+  std::erase(last, storage.end());
+  return storage;
+}
+
+void run(auto &&levels, auto &&process) {
+  if (levels.rbegin() != levels.rend()) {
+    auto prior{*levels.rbegin()};
+    auto begin = levels.rbegin();
+    // Re-use allocated memory.
+    decltype(prior) copy;
+    while (++begin != levels.rend()) {
+      copy.clear();
+      auto const &novel = *begin;
+      auto pg = prior.begin();
+      auto ng = novel.begin();
+      if (ng == novel.end() || pg == prior.end())
+        break;
+      // Skip.
+      while (ng->begin() != pg->begin())
+        ++ng;
+      // Cull.
+      while (pg != prior.end()) {
+        if (ng->begin() == pg->begin()) {
+          while (ng->end() != pg->end())
+            copy.push_back(*ng++);
+          copy.push_back(*ng++), ++pg;
+        } else
+          while (ng->begin() != pg->begin())
+            ++ng;
+      }
+      // Process.
+      std::erase_if(copy, process);
+      // Break if no more.
+      if (copy.empty())
+        break;
+      prior = copy;
+    }
   }
 }
 
