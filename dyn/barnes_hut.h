@@ -161,7 +161,7 @@ public:
 
     // prefix: Compute the masked Morton (Z) code, which computes the prefix
     // bits (less significant bits cut off).
-    auto m = mask;
+    std::unsigned_integral auto m = mask;
     auto prefix = [&z, m](auto &&p) { return z(p, m); };
 
     if (prior.empty()) {
