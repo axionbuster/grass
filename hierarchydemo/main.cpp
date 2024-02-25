@@ -24,9 +24,7 @@ struct Particle {
 
   void update_morton() { morton_code = dyn::bh32::morton(xy); }
 
-  [[nodiscard]] std::optional<uint64_t> morton() const {
-    return dyn::bh32::morton(xy);
-  }
+  [[nodiscard]] std::optional<uint64_t> morton() const { return morton_code; }
 };
 
 /// Used for signaling in the Barnes-Hut iteration.
@@ -50,13 +48,11 @@ struct Physicals {
   Physicals &operator+=(Physicals const &p) {
     if (this == &p)
       return count *= 2.0f, *this;
-    typedef std::complex<double> C;
-    typedef std::complex<float> F;
-    auto sum = double(count) + double(p.count);
-    auto proportion0 = double(count) / sum;
-    auto proportion1 = double(p.count) / sum;
+    auto sum = count + p.count;
+    auto proportion0 = count / sum;
+    auto proportion1 = p.count / sum;
     count += p.count;
-    xy = F{proportion0 * C{xy} + proportion1 * C{p.xy}};
+    xy = proportion0 * xy + proportion1 * p.xy;
     radius = std::max(radius, p.radius + std::abs(p.xy - xy));
     return *this;
   }
