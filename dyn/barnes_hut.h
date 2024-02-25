@@ -43,6 +43,23 @@ constexpr uint64_t interleave32(uint32_t re, uint32_t im) {
   // Imaginary first.
   return W[0] | (W[1] << 1);
 }
+
+/// @brief Group consecutive particles with the same Z-code.
+/// @param begin Starting iterator for the particles.
+/// @param end Past-the-end iterator for the particles, possibly equal to begin.
+/// @param z Given what is like a const lvalue reference to a particle, compute
+/// its z-code, perhaps masked (low bits flushed to zero).
+/// @param grp Callback with two arguments, both iterators to the particles, to
+/// be called when a range of particles is announced.
+void group(auto begin, auto const end, auto &&z, auto &&grp) {
+  while (begin != end) {
+    auto [first, last] = std::ranges::equal_range(begin, end, z(*begin), {}, z);
+    if (first != last)
+      grp(first, begin = last);
+    else
+      ++begin;
+  }
+}
 } // namespace detail
 
 /// @brief Compute the Morton (Z) code of a complex number xy assuming a squared
@@ -63,26 +80,9 @@ std::optional<uint64_t> morton(std::complex<float> xy) {
   return {};
 }
 
-/// @brief Group consecutive particles with the same Z-code.
-/// @param begin Starting iterator for the particles.
-/// @param end Past-the-end iterator for the particles, possibly equal to begin.
-/// @param z Given what is like a const lvalue reference to a particle, compute
-/// its z-code, perhaps masked (low bits flushed to zero).
-/// @param grp Callback with two arguments, both iterators to the particles, to
-/// be called when a range of particles is announced.
-void group(auto begin, auto const end, auto &&z, auto &&grp) {
-  while (begin != end) {
-    auto [first, last] = std::ranges::equal_range(begin, end, z(*begin), {}, z);
-    if (first != last)
-      grp(first, begin = last);
-    else
-      ++begin;
-  }
-}
-
 /// A consecutive group of particles.
 /// @tparam E Extra data (type of field `data`). An E object may be constructed
-/// by passing two iterators to particles ("begin" and "end) or by default
+/// by passing two iterators to particles ("begin" and "end") or by default
 /// construction, and it can be updated using the `+=` operator with an E object
 template <typename E, typename I> struct Group {
   I first, last;
@@ -111,36 +111,35 @@ template <typename E, typename I> struct Group {
   }
 };
 
-template <class E, class S> class View {
+/// A view to a set of particles.
+template <class S> class View {
   /// Mask (begin with the finest detail, first).
   uint64_t mask = 0xffff'ffff'ffff'ffff;
 
-  /// Iterate over particles.
+  /// Iterate over particles (`begin` and `end` calls).
   S s;
 
 public:
   View(S s) : s(s) {}
 
-  using Groups = std::vector<Group<E, decltype(s.begin())>>;
+  /// Return type of `groups`.
+  template <class E> using Groups = std::vector<Group<E, decltype(s.begin())>>;
 
   /// Compute the groups at the current level of detail.
-  /// @param z Take the particle and then compute the Morton code.
+  /// @param z Take the particle and then compute the Morton (Z) code masked by
+  /// the given `uint64_t` mask.
   /// @param prior The result of this function call for one finer level of
   /// detail.
-  Groups groups(auto &&z, Groups const &prior = {}) const {
+  template <class E>
+  [[nodiscard]] Groups<E> groups(auto &&z, Groups<E> const &prior = {}) const {
     if (!mask || s.begin() == s.end())
       return {};
-    Groups novel{};
+    Groups<E> novel{};
     auto m = mask;
-    auto z_masked = [m, &z](auto &&p) -> std::optional<uint64_t> {
-      if (auto w = z(p); w.has_value())
-        return w.value() & m;
-      else
-        return {};
-    };
+    auto z_masked = [&z, m](auto &&p) { return z(p, m); };
     auto grp = [&novel](auto f, auto l) { novel.emplace_back(f, l); };
     if (prior.empty())
-      return group(s.begin(), s.end(), z_masked, grp), novel;
+      return detail::group(s.begin(), s.end(), z_masked, grp), novel;
     // One finer level of detail in `prior`.
     // Merge the groups, then, instead of recalculating everything.
     // Two-pointer solution: g and j are iterators to the groups in `prior`.
@@ -167,8 +166,10 @@ public:
   void coarser() { mask <<= 2; }
 };
 
-template <class E, class S> auto levels(View<E, S> &view, auto &&z) {
-  auto a = view.groups(z);
+/// Compute all levels given a view and a way to compute the Morton codes given
+/// a particle (see View::groups for information on `z`).
+template <class E> auto levels(auto &&view, auto &&z) {
+  auto a = view.template groups<E>(z);
   auto l = std::vector<decltype(a)>{std::move(a)};
   do
     view.coarser(), l.push_back(view.groups(z, l.back()));
@@ -179,39 +180,44 @@ template <class E, class S> auto levels(View<E, S> &view, auto &&z) {
   return l;
 }
 
-void run(auto &&levels, auto &&process) {
-  if (levels.rbegin() != levels.rend()) {
-    auto prior{*levels.rbegin()};
-    auto begin = levels.rbegin();
-    // Re-use allocated memory.
-    decltype(prior) copy{};
-    while (++begin != levels.rend()) {
-      copy.clear();
-      auto const &novel = *begin;
-      auto pg = prior.begin();
-      auto ng = novel.begin();
-      if (ng == novel.end() || pg == prior.end())
-        break;
-      // Skip.
-      while (ng->begin() != pg->begin())
-        ++ng;
-      // Cull.
-      while (pg != prior.end()) {
-        if (ng->begin() == pg->begin()) {
-          while (ng->end() != pg->end())
-            copy.push_back(*ng++);
-          copy.push_back(*ng++), ++pg;
-        } else
-          while (ng->begin() != pg->begin())
-            ++ng;
-      }
-      // Process.
-      std::erase_if(copy, process);
-      // Break if no more.
-      if (copy.empty())
-        break;
-      prior = copy;
+/// Process the levels.
+/// @param levels What is returned by the free function `levels`.
+/// @param process Return nonzero if a group should be discarded; zero if it
+/// should be broken up into finer pieces.
+void run(auto const &levels, auto &&process) {
+  if (levels.rbegin() == levels.rend())
+    return;
+  auto begin = levels.rbegin();
+  auto prior{*begin};
+  while (++begin != levels.rend()) {
+    // Filter `novel` for inclusion in elements in `prior` knowing that the
+    // elements are sorted in Morton order.
+    decltype(prior) copy;
+    auto const &novel = *begin;
+    auto pg = prior.begin();
+    auto ng = novel.begin();
+    if (ng == novel.end() || pg == prior.end())
+      break;
+    // Skip.
+    while (ng->begin() != pg->begin())
+      ++ng;
+    // Cull.
+    while (pg != prior.end()) {
+      if (ng->begin() == pg->begin()) {
+        while (ng->end() != pg->end())
+          copy.push_back(*ng++);
+        copy.push_back(*ng++), ++pg;
+      } else
+        while (ng->begin() != pg->begin())
+          ++ng;
     }
+
+    // Process.
+    std::erase_if(copy, process);
+    // Break if no more.
+    if (copy.empty())
+      break;
+    prior = copy;
   }
 }
 

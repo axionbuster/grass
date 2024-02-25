@@ -52,8 +52,11 @@ struct Physicals {
       return count *= 2.0f, *this;
     typedef std::complex<double> C;
     typedef std::complex<float> F;
+    auto sum = double(count) + double(p.count);
+    auto proportion0 = double(count) / sum;
+    auto proportion1 = double(p.count) / sum;
     count += p.count;
-    xy = F{(C{xy} + C{p.xy}) / 2.0};
+    xy = F{proportion0 * C{xy} + proportion1 * C{p.xy}};
     radius = std::max(radius, p.radius + std::abs(p.xy - xy));
     return *this;
   }
@@ -61,7 +64,7 @@ struct Physicals {
 
 /// Store particles
 struct State : public std::vector<Particle> {
-  State(int N = 500) {
+  State(int N = 50'000) {
     std::mt19937 r(std::random_device{}());
     std::normal_distribution<float> z;
     for (auto i = 0; i < N; i++)
@@ -163,8 +166,16 @@ static int do_main() {
       namespace bh = dyn::bh32;
 
       // Require Z-sorted particles in state.
-      bh::View<Physicals, const State &> view{state};
-      auto levels = bh::levels(view, [](auto &&p) { return p.morton(); });
+      bh::View<State const &> view{state};
+      // Masked Morton (Z) code.
+      auto morton = [](auto &&p, uint64_t m) -> std::optional<uint64_t> {
+        if (auto w = p.morton(); w.has_value())
+          return w.value() & m;
+        else
+          return {};
+      };
+      // Compute the "levels."
+      auto levels = bh::levels<Physicals>(view, morton);
       bh::run(levels, process);
     }
     EndMode2D();
