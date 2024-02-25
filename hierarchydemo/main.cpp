@@ -52,9 +52,8 @@ struct Physicals {
       return count *= 2.0f, *this;
     typedef std::complex<double> C;
     typedef std::complex<float> F;
-    C xyd{xy};
-    xyd += (C{p.xy} / double(p.count) - xyd) / double(++count);
-    xy = F{xyd};
+    count += p.count;
+    xy = F{(C{xy} + C{p.xy}) / 2.0};
     radius = std::max(radius, p.radius + std::abs(p.xy - xy));
     return *this;
   }
@@ -62,7 +61,7 @@ struct Physicals {
 
 /// Store particles
 struct State : public std::vector<Particle> {
-  State(int N = 50'000) {
+  State(int N = 500) {
     std::mt19937 r(std::random_device{}());
     std::normal_distribution<float> z;
     for (auto i = 0; i < N; i++)
