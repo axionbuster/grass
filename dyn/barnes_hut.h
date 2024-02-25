@@ -2,6 +2,7 @@
 #define GRASS_BARNES_HUT_H
 
 #include <algorithm>
+#include <array>
 #include <complex>
 #include <cstdint>
 #include <optional>
@@ -54,7 +55,7 @@ std::optional<uint64_t> morton(std::complex<float> xy) {
   if (std::abs(xy.real()) < float(INT32_MAX) &&
       std::abs(xy.imag()) < float(INT32_MAX)) {
     // unsigned.
-    auto sgn = 0x8000'0000u;
+    auto sgn = uint32_t(0x8000'0000ul);
     auto x = int32_t(xy.real()) ^ sgn; // promoted to unsigned.
     auto y = int32_t(xy.imag()) ^ sgn; // (ditto).
     return detail::interleave32(x, y);
