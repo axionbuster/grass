@@ -83,6 +83,7 @@ std::optional<uint64_t> morton(std::complex<float> xy) {
   // INT32_MAX (when both are cast to double).
   if (std::abs(xy.real()) < float(INT32_MAX) &&
       std::abs(xy.imag()) < float(INT32_MAX)) {
+    // Flip sign bit before bit-casting to unsigned to preserve order.
     auto sgn = uint32_t(0x8000'0000ul);
     auto x = int32_t(xy.real()) ^ sgn; // promoted to unsigned.
     auto y = int32_t(xy.imag()) ^ sgn; // (ditto).
@@ -100,6 +101,7 @@ template <typename E, typename I> struct Group {
   E data{};
   /// Create a group of particles using iterators to particles.
   Group(I first, I last) : first{first}, last{last}, data{first, last} {}
+  /// Summarize a range of smaller groups.
   Group(auto g_first, auto g_last) {
     first = g_first->first;
     while (g_first != g_last)
@@ -201,7 +203,7 @@ public:
 };
 
 /// Compute all levels given a view and a way to compute the Morton codes given
-/// a particle (see View::groups for information on `z`).
+/// a particle and a mask (see View::groups for information on `z`).
 template <class E> auto levels(auto &&view, auto &&z) {
   // (Typing hacks)
   auto a = view.template groups<E>(z);
@@ -224,8 +226,11 @@ void run(auto const &levels, auto &&process) {
   if (levels.rbegin() == levels.rend())
     return;
 
-  // Filter `novel` for inclusion in elements in `prior` knowing that the
-  // elements are sorted in Morton order.
+  // Below, `novel` and `prior` are collections of groups.
+  // A "group" is a range of particles (plus any extra data).
+
+  // Filter `novel` for inclusion in groups in `prior` knowing that the
+  // groups are sorted in Morton order.
   auto begin = levels.rbegin();
   auto prior{*begin};
   while (++begin != levels.rend()) {
@@ -253,14 +258,14 @@ void run(auto const &levels, auto &&process) {
           ++ng;
     }
 
-    // Process.
+    // Process the chosen groups in `copy`.
     std::erase_if(copy, process);
 
     // Break if no more.
     if (copy.empty())
       break;
 
-    // Learn which branches are kept, which are pruned.
+    // Learn which branches are kept and which are pruned.
     prior = copy;
   }
 }
