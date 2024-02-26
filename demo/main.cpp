@@ -15,7 +15,7 @@
 using namespace phy;
 
 static int do_main() {
-  auto constexpr PARTICLES_LIMIT = 1'000;
+  auto constexpr PARTICLES_LIMIT = 5'000;
   auto constexpr RADIUS = 0.05f;
   auto constexpr MASS = 1.0f;
   auto constexpr too_far = [](Particle &p) {
@@ -43,6 +43,7 @@ static int do_main() {
     return Particle{{0}, {0}, mass, radius};
   };
 
+  SetConfigFlags(FLAG_WINDOW_RESIZABLE);
   InitWindow(600, 600, "Basic 1,000 particle demo (click to add particles)");
 
   // The physical table (store particles, etc.); backup.
