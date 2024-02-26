@@ -223,6 +223,10 @@ void run(auto const &levels, auto &&process) {
   // groups are sorted in Morton order.
   auto begin = levels.rbegin();
   auto prior{*begin};
+  if (auto b = begin; ++b == levels.rend()) {
+    process(*begin->begin());
+    return;
+  }
   while (++begin != levels.rend()) {
     auto const &novel = *begin;
     // copy: Filtered copy of `novel`.

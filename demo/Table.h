@@ -65,6 +65,8 @@ struct W {
       mass += p->mass;
     if (auto p = first; p != last && ++p == last) {
       xy = first->xy;
+      mass = first->mass;
+      radius = first->radius;
       return;
     }
     std::complex<double> xyd;
@@ -162,7 +164,6 @@ public:
       auto &q = (*this)[i];
       q.xy = step.y0, q.v = step.y1;
     }
-    *this = copy;
   }
 
   /// @brief Refresh the "disk" used for parts of the calculation.
