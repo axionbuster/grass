@@ -119,10 +119,7 @@ static int do_main() {
   cam0 = cam;
 
   while (!WindowShouldClose()) {
-    // Apply variable time.
-    // FIXME: The integrators Yoshida and Verlet currently do not support
-    //  variable time; numerical errors may occur (but not programming errors).
-    float dt = interactive ? GetFrameTime() : interactive.target_dt();
+    float dt = interactive.target_dt();
 
     // Reset the simulation (R).
     if (IsKeyPressed(KEY_R))
