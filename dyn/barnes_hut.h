@@ -227,10 +227,11 @@ void run(auto const &levels, auto &&process) {
     process(*begin->begin());
     return;
   }
+  // copy: Filtered copy of `novel` below.
+  decltype(prior) copy{};
   while (++begin != levels.rend()) {
+    copy.clear();
     auto const &novel = *begin;
-    // copy: Filtered copy of `novel`.
-    decltype(prior) copy{};
     // Iterators to a prior group (pg) and a novel group (ng).
     auto pg = prior.begin();
     auto ng = novel.begin();
