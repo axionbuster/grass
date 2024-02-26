@@ -225,24 +225,9 @@ static int do_main() {
 
     // Draw all particles in the frame.
     BeginMode2D(cam);
-    {
-      // Compute the screen's less-less (ll) and greater-greater (gg) corners in
-      // the world coordinate system so that draw calls would only be issued for
-      // certainly visible particles.
-      std::complex<float> scwh{float(GetScreenWidth()),
-                               float(GetScreenHeight())};
-      std::complex<float> scof{cam.offset.x, cam.offset.y};
-      std::complex<float> sctg{cam.target.x, cam.target.y};
-      scof /= cam.zoom;
-      auto scsc = scwh / cam.zoom - scof;
-      auto ll = sctg - scsc, gg = sctg + scsc;
-      for (auto &&p : table) {
-        auto cp = p.circle();
-        if (dyn::disk_arrect_isct(cp, ll, gg))
-          // Yes, the particle (p) is certainly overlapping with the
-          // rectangle with the corners ll and gg; draw it.
-          DrawCircleV({cp.real(), cp.imag()}, cp.radius, WHITE);
-      }
+    for (auto &&p : table) {
+      auto cp = p.circle();
+      DrawCircleV({cp.real(), cp.imag()}, cp.radius, WHITE);
     }
     EndMode2D();
 
