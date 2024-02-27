@@ -6,6 +6,7 @@
 #include <complex>
 #include <concepts>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -69,29 +70,43 @@ std::optional<uint64_t> morton(std::complex<float> xy) {
   return {};
 }
 
+template <class, std::unsigned_integral M = uint64_t> class View;
+void run(auto const &group, auto &&process);
+
+namespace detail {
+
 /// A consecutive group of particles.
 /// @tparam E Extra data (type of field `data`). An E object may be constructed
 /// by passing two iterators to particles ("begin" and "end") or by default
 /// construction, and it can be updated using the `+=` operator with an E object
-template <typename E, typename I> struct Group {
+template <typename E, typename I> class Group {
+  template <class, std::unsigned_integral> friend class View;
+  template <class A, class B> friend void run(A, B);
+
+  /// @brief Non-empty range of particles (last is the past-the-end iterator).
   I first, last;
+
+  /// @brief Left-child, right-sibling pointers (empty by default).
+  std::shared_ptr<Group> left, right;
+
+  /// @brief Extra data.
   E data{};
+
   /// Create a group of particles using iterators to particles.
   Group(I first, I last) : first{first}, last{last}, data{first, last} {}
-  /// Summarize a range of smaller groups.
-  Group(auto g_first, auto g_last) {
-    first = g_first->first;
-    while (g_first != g_last)
-      last = g_first->last, data += g_first++->data;
-  }
+
   /// Iterate over the particles.
   [[nodiscard]] I begin() { return first; }
+
   /// Iterate over the particles.
   [[nodiscard]] I end() { return last; }
+
   /// Iterate over the particles.
   [[nodiscard]] I begin() const { return first; }
+
   /// Iterate over the particles.
   [[nodiscard]] I end() const { return last; }
+
   /// Test whether this group holds exactly one particle.
   [[nodiscard]] bool single() const {
     if (first == last)
@@ -99,48 +114,36 @@ template <typename E, typename I> struct Group {
     auto a{first};
     return ++a == last;
   }
-  /// Test: Are the iterators equal (disregarding `data`)?
-  [[nodiscard]] bool operator==(Group const &g) const {
-    // Ignore extra data.
-    return this == &g || (first == g.first && last == g.last);
-  }
 };
+
+} // namespace detail
 
 /// A view to a set of particles.
 /// @tparam S A set of particles (begin() and end() iterates over the particles)
 /// @tparam M An unsigned integer type used for masking Morton (Z) codes.
-template <class S, std::unsigned_integral M = uint64_t> class View {
+template <class S, std::unsigned_integral M> class View {
   /// Mask (begin with the finest detail, first).
   M mask = ~M{};
 
   /// Iterate over particles (`begin` and `end` calls).
   S s;
 
-  // Has a method named `size`?
-  // (Thanks to some wizards on Stack Overflow.)
-  template <class U>
-  static decltype(std::declval<U>().size(), void(), std::true_type()) test(int);
-  template <class> static std::false_type test(...);
-  typedef decltype(test<S>(0)) has_size_test;
-  enum { has_size = has_size_test::value };
-
-public:
-  View(S s) : s(s) {}
-
-  /// Return type of `groups`.
-  template <class E> using Groups = std::vector<Group<E, decltype(s.begin())>>;
+  /// @brief A A group type (specialized for the type variable S).
+  /// @tparam E Extra data type.
+  template <class E> using GroupType = detail::Group<E, decltype(s.begin())>;
 
   /// Compute the groups at the current level of detail.
+  /// @tparam E Extra data type.
   /// @param z Take the particle and then compute the Morton (Z) code masked by
   /// the given M-type mask.
   /// @param prior The result of this function call for one finer level of
   /// detail.
   template <class E>
-  [[nodiscard]] Groups<E> groups(auto &&z, Groups<E> const &prior = {}) const {
+  [[nodiscard]] std::shared_ptr<GroupType<E>>
+  layer(auto &&z, std::shared_ptr<GroupType<E>> const &prior = {}) const {
     if (!mask || s.begin() == s.end())
-      // Empty output used as sentinel to halt processing by the free functions:
-      //  - `levels`
-      //  - `run`
+      // Empty output is used as a sentinel to halt processing by the free
+      // function `run`.
       return {};
 
     // prefix: Compute the masked Morton (Z) code, which computes the prefix
@@ -148,120 +151,96 @@ public:
     std::unsigned_integral auto m = mask;
     auto prefix = [&z, m](auto &&p) { return z(p, m); };
 
-    Groups<E> novel{};
-    if constexpr (has_size)
-      novel.reserve(s.size());
-
-    if (prior.empty()) {
+    if (prior) {
+      // One finer level of detail exists in `prior`.
+      // Merge the groups, then, instead of recalculating everything.
+      // Two-pointer solution (let g and h be pointers to groups).
+      auto g = prior, h = prior->right;
+      // Merge groups having the same Morton (Z) prefixes a and b into group q.
+      // p is the root (q gets updated).
+      auto p = std::make_shared<>(*g), q = p;
+      // Let g be the child (left) of q.
+      q->left = g;
+      auto a = prefix(*(*g)->first);
+      while (h) {
+        auto b = prefix(*(*h)->first);
+        if (a == b) {
+          // If same prefix, update q:
+          //  - Set boundary of past-the-last particle iterator (last).
+          //  - Merge physical summary data (+=).
+          q->last = h->last;
+          q->data += h->data;
+        } else {
+          // New prefix:
+          //  - New group (r).
+          //  - Let r be the sibling (right) of q.
+          //  - Replace the groups.
+          auto r = std::make_shared<>(*h);
+          q->right = r;
+          std::swap(q, r);
+          a = b;
+          g = h;
+        }
+        h = h->right;
+      }
+      return p;
+    } else {
       // First call? No problem. Turn each particle into a group.
-      for (auto i = s.begin(); i != s.end(); ++i) {
-        auto j = i;
-        novel.emplace_back(i, ++j);
+      auto j = s.begin(), i = j++;
+      auto g = std::make_shared<GroupType<E>>(i, j);
+      if (i == s.end())
+        return g;
+      while (++i, ++j != s.end()) {
+        auto h = std::make_shared<GroupType<E>>(i, j);
+        h->right = g;
+        std::swap(g, h);
       }
-      return novel;
+      return g;
     }
-
-    // One finer level of detail exists in `prior`.
-    // Merge the groups, then, instead of recalculating everything.
-    // Two-pointer solution: g and h are iterators to the groups in `prior`.
-    auto g = prior.begin(), h = g;
-    // Merge groups having the same Morton (Z)-prefixes (a, b).
-    auto a = prefix(*g->first);
-    while (++h != prior.end()) {
-      auto b = prefix(*h->first);
-      // If same prefix, don't do anything specific.
-      // If new prefix, create a group by merging many groups.
-      if (a != b) {
-        // Yes, new prefix. Treat h as past-the-end iterator to the range of
-        // groups. Pass g and h to the "range of groups" constructor of Group.
-        novel.emplace_back(g, h);
-        g = h;
-        a = b;
-      }
-    }
-    // Handle runoff.
-    if (g != h)
-      novel.emplace_back(g, h);
-    return novel;
   }
+
+public:
+  View(S s) : s(s) {}
 
   /// Make the level of detail one level coarser.
   void coarser() {
     // Let `mask` run off to zero if at last level of detail.
     mask <<= 2;
   }
+
+  template <class E>
+  [[nodiscard]] std::shared_ptr<GroupType<E>> tree(auto &&z) const {
+    auto siblings = [](auto &&l) {
+      size_t c{};
+      while (l)
+        ++c, l = l->right;
+      return c;
+    };
+    auto l = layer(z), c = siblings(l);
+    while (l) {
+      coarser(), l = layer(z, l);
+      if (auto d = siblings(l); c == d)
+        return l;
+      else
+        c = d;
+    }
+    return l;
+  }
 };
 
-/// Compute all levels given a view and a way to compute the Morton codes given
-/// a particle and a mask (see View::groups for information on `z`).
-template <class E> auto levels(auto &&view, auto &&z) {
-  // (Typing hacks)
-  auto a = view.template groups<E>(z);
-  auto l = std::vector<decltype(a)>{std::move(a)};
-  do
-    // Regurgitate.
-    view.coarser(), l.emplace_back(view.groups(z, l.back()));
-  while (!l.back().empty());
-  l.pop_back();
-  // Cull consecutive layers with the identical groups.
-  l.erase(std::unique(l.begin(), l.end()), l.end());
-  return l;
-}
-
-/// Process the levels.
-/// @param levels What is returned by the free function `levels`.
-/// @param process Return nonzero if a group should be discarded; zero if it
-/// should be broken up into finer pieces.
-void run(auto const &levels, auto &&process) {
-  if (levels.rbegin() == levels.rend())
+void run(auto const &group, auto &&process) {
+  if (!group)
     return;
-
-  // Below, `novel` and `prior` are collections of groups.
-  // A "group" is a range of particles (plus any extra data).
-
-  // Filter `novel` for inclusion in groups in `prior` knowing that the
-  // groups are sorted in Morton order.
-  auto begin = levels.rbegin();
-  auto prior{*begin};
-  if (auto b = begin; ++b == levels.rend()) {
-    process(*begin->begin());
-    return;
-  }
-  // copy: Filtered copy of `novel` below.
-  decltype(prior) copy{};
-  while (++begin != levels.rend()) {
-    copy.clear();
-    auto const &novel = *begin;
-    // Iterators to a prior group (pg) and a novel group (ng).
-    auto pg = prior.begin();
-    auto ng = novel.begin();
-    if (ng == novel.end() || pg == prior.end())
-      break;
-
-    // Skip.
-    while (ng->begin() != pg->begin())
-      ++ng;
-
-    // Cull.
-    while (pg != prior.end()) {
-      if (ng->begin() == pg->begin()) {
-        while (ng->end() != pg->end())
-          copy.push_back(*ng++);
-        copy.push_back(*ng++), ++pg;
-      } else
-        while (ng->begin() != pg->begin())
-          ++ng;
-    }
-
-    // Process the chosen groups in `copy`.
-    std::erase_if(copy, process);
-
-    // Break if no more.
-    if (copy.empty())
-      break;
-
-    // Learn which branches are kept and which are pruned.
-    prior = copy;
+  // Apply dfs with the stack (s) of groups.
+  auto s = std::vector{group};
+  while (!s.empty()) {
+    if (auto top = s.back(); s.pop(), !process(top) && top->left)
+      // False-y value from `process`: Further detail required.
+      // Push child of top.
+      s.push_back(top->left);
+    // Push siblings of top.
+    for (auto g = group->right; !g.empty(); g = g->right)
+      s.push_back(g);
   }
 }
 
