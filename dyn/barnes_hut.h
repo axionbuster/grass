@@ -161,9 +161,10 @@ template <class S, std::unsigned_integral M> class View {
       auto p = std::make_shared<>(*g), q = p;
       // Let g be the child (left) of q.
       q->left = g;
-      auto a = prefix(*(*g)->first);
+      // Let a and b be the Morton (Z) prefixes of g and h.
+      auto a = prefix(*(*g)->first); // first particle.
       while (h) {
-        auto b = prefix(*(*h)->first);
+        auto b = prefix(*(*h)->first); // (ditto).
         if (a == b) {
           // If same prefix, update q:
           //  - Set boundary of past-the-last particle iterator (last).
@@ -173,9 +174,11 @@ template <class S, std::unsigned_integral M> class View {
         } else {
           // New prefix:
           //  - New group (r).
+          //  - Let r remember where it comes from (h).
           //  - Let r be the sibling (right) of q.
           //  - Replace the groups.
           auto r = std::make_shared<>(*h);
+          r->left = h;
           q->right = r;
           std::swap(q, r);
           a = b;
