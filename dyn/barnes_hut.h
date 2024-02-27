@@ -70,10 +70,11 @@ std::optional<uint64_t> morton(std::complex<float> xy) {
   return {};
 }
 
+namespace detail {
+
 template <class, std::unsigned_integral M = uint64_t> class View;
 void run(auto const &group, auto &&process);
-
-namespace detail {
+auto tree(auto &&, auto &&, auto &&);
 
 /// A consecutive group of particles.
 /// @tparam E Extra data (type of field `data`). An E object may be constructed
@@ -81,13 +82,14 @@ namespace detail {
 /// construction, and it can be updated using the `+=` operator with an E object
 template <typename E, typename I> class Group {
   template <class, std::unsigned_integral> friend class View;
-  template <class A, class B> friend void run(A, B);
+  friend void run(auto const &, auto &&);
+  friend auto tree(auto &&, auto &&, auto &&);
 
   /// @brief Non-empty range of particles (last is the past-the-end iterator).
   I first, last;
 
   /// @brief Left-child, right-sibling pointers (empty by default).
-  std::shared_ptr<Group> left, right;
+  std::shared_ptr<Group> child, sibling;
 
   /// @brief Extra data.
   E data{};
@@ -107,6 +109,7 @@ template <typename E, typename I> class Group {
   /// Iterate over the particles.
   [[nodiscard]] I end() const { return last; }
 
+public:
   /// Test whether this group holds exactly one particle.
   [[nodiscard]] bool single() const {
     if (first == last)
@@ -114,34 +117,37 @@ template <typename E, typename I> class Group {
     auto a{first};
     return ++a == last;
   }
+
+  /// Return a reference to the data.
+  [[nodiscard]] E &operator()() { return data; }
+
+  [[nodiscard]] E const &operator()() const { return data; }
 };
 
-} // namespace detail
-
 /// A view to a set of particles.
-/// @tparam S A set of particles (begin() and end() iterates over the particles)
+/// @tparam I Iterator of particles.
 /// @tparam M An unsigned integer type used for masking Morton (Z) codes.
-template <class S, std::unsigned_integral M> class View {
-  /// Mask (begin with the finest detail, first).
+template <class I, std::unsigned_integral M> class View {
+  friend void run(auto const &, auto &&);
+  friend auto tree(auto &&, auto &&, auto &&);
+
+  /// Mask (begin with the finest detail, that is, all ones, first).
+  /// At all zeroes, stop processing.
   M mask = ~M{};
 
-  /// Iterate over particles (`begin` and `end` calls).
-  S s;
-
-  /// @brief A A group type (specialized for the type variable S).
-  /// @tparam E Extra data type.
-  template <class E> using GroupType = detail::Group<E, decltype(s.begin())>;
+  /// Iterators over the particles. Possibly empty.
+  I first, last;
 
   /// Compute the groups at the current level of detail.
   /// @tparam E Extra data type.
   /// @param z Take the particle and then compute the Morton (Z) code masked by
   /// the given M-type mask.
   /// @param prior The result of this function call for one finer level of
-  /// detail.
+  /// detail (see `coarser`).
   template <class E>
-  [[nodiscard]] std::shared_ptr<GroupType<E>>
-  layer(auto &&z, std::shared_ptr<GroupType<E>> const &prior = {}) const {
-    if (!mask || s.begin() == s.end())
+  [[nodiscard]] std::shared_ptr<Group<E, I>>
+  layer(auto &&z, std::shared_ptr<Group<E, I>> const &prior = {}) const {
+    if (!mask || first == last)
       // Empty output is used as a sentinel to halt processing by the free
       // function `run`.
       return {};
@@ -155,55 +161,54 @@ template <class S, std::unsigned_integral M> class View {
       // One finer level of detail exists in `prior`.
       // Merge the groups, then, instead of recalculating everything.
       // Two-pointer solution (let g and h be pointers to groups).
-      auto g = prior, h = prior->right;
+      auto g = prior;
       // Merge groups having the same Morton (Z) prefixes a and b into group q.
       // p is the root (q gets updated).
       auto p = std::make_shared<>(*g), q = p;
-      // Let g be the child (left) of q.
-      q->left = g;
+      // Let g be the child of q.
+      q->child = g;
       // Let a and b be the Morton (Z) prefixes of g and h.
       auto a = prefix(*(*g)->first); // first particle.
-      while (h) {
-        auto b = prefix(*(*h)->first); // (ditto).
+      while ((g = g->sibling)) {
+        auto b = prefix(*(*g)->first); // (ditto).
         if (a == b) {
           // If same prefix, update q:
           //  - Set boundary of past-the-last particle iterator (last).
           //  - Merge physical summary data (+=).
-          q->last = h->last;
-          q->data += h->data;
+          q->last = g->last;
+          q->data += g->data;
         } else {
           // New prefix:
           //  - New group (r).
-          //  - Let r remember where it comes from (h).
-          //  - Let r be the sibling (right) of q.
+          //  - Let r remember where it comes from (g).
+          //  - Let r be the sibling of q.
           //  - Replace the groups.
-          auto r = std::make_shared<>(*h);
-          r->left = h;
-          q->right = r;
+          auto r = std::make_shared<>(*g);
+          r->child = g;
+          q->sibling = r;
           std::swap(q, r);
           a = b;
-          g = h;
         }
-        h = h->right;
       }
       return p;
     } else {
       // First call? No problem. Turn each particle into a group.
-      auto j = s.begin(), i = j++;
-      auto g = std::make_shared<GroupType<E>>(i, j);
-      if (i == s.end())
+      // Let i and j be iterators to the particles.
+      // Know that first != last here.
+      auto j = first, i = j++;
+      auto g = std::make_shared<Group<E, I>>(i, j);
+      if (j == last)
         return g;
-      while (++i, ++j != s.end()) {
-        auto h = std::make_shared<GroupType<E>>(i, j);
-        h->right = g;
+      while (++i, ++j != last) {
+        auto h = std::make_shared<Group<E, I>>(i, j);
+        h->sibling = g;
         std::swap(g, h);
       }
       return g;
     }
   }
 
-public:
-  View(S s) : s(s) {}
+  View(I first, I last) : first{first}, last{last} {}
 
   /// Make the level of detail one level coarser.
   void coarser() {
@@ -211,18 +216,22 @@ public:
     mask <<= 2;
   }
 
+  /// Construct a tree and then return a root node.
   template <class E>
-  [[nodiscard]] std::shared_ptr<GroupType<E>> tree(auto &&z) const {
+  [[nodiscard]] std::shared_ptr<Group<E, I>> tree(auto &&z) const {
     auto siblings = [](auto &&l) {
       size_t c{};
       while (l)
-        ++c, l = l->right;
+        ++c, l = l->sibling;
       return c;
     };
     auto l = layer(z), c = siblings(l);
     while (l) {
       coarser(), l = layer(z, l);
+      // Count of groups decreases if and only if further processed
+      // (otherwise idempotent).
       if (auto d = siblings(l); c == d)
+        // Cut tree to prevent duplicated visits during depth-first search.
         return l;
       else
         c = d;
@@ -231,21 +240,39 @@ public:
   }
 };
 
+/// Construct a tree given an iterator to particles.
+/// @param first Beginning iterator to the particles.
+/// @param last Ending iterator to the particles (possibly equal to first).
+/// @param z Given a particle and an unsigned integer mask, compute the Morton
+/// code (Z code) as an unsigned integer and then apply the mask by bitwise AND.
+auto tree(auto &&first, auto &&last, auto &&z) {
+  auto v = View{first, last};
+  return v.tree(z);
+}
+
+/// Run the group.
+/// @param group Return value of a call to `tree`.
+/// @param process Given a reference to a group,
 void run(auto const &group, auto &&process) {
   if (!group)
     return;
-  // Apply dfs with the stack (s) of groups.
+  // Apply depth-first search with the stack (s) of groups.
   auto s = std::vector{group};
   while (!s.empty()) {
-    if (auto top = s.back(); s.pop(), !process(top) && top->left)
+    if (auto top = s.back(); s.pop(), !process(top) && top->child)
       // False-y value from `process`: Further detail required.
       // Push child of top.
-      s.push_back(top->left);
+      s.push_back(top->child);
     // Push siblings of top.
-    for (auto g = group->right; !g.empty(); g = g->right)
+    for (auto g = group->sibling; !g.empty(); g = g->sibling)
       s.push_back(g);
   }
 }
+
+} // namespace detail
+
+using detail::run;
+using detail::tree;
 
 } // namespace dyn::bh32
 
