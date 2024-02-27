@@ -259,7 +259,7 @@ void run(auto const &group, auto &&process) {
   // Apply depth-first search with the stack (s) of groups.
   auto s = std::vector{group};
   while (!s.empty()) {
-    if (auto top = s.back(); s.pop(), !process(top) && top->child)
+    if (auto top = std::move(s.back()); s.pop(), !process(top) && top->child)
       // False-y value from `process`: Further detail required.
       // Push child of top.
       s.push_back(top->child);
