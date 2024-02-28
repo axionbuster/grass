@@ -74,7 +74,7 @@ namespace detail {
 
 template <class, std::unsigned_integral M = uint64_t> class View;
 void run(auto const &group, auto &&process);
-auto tree(auto &&, auto &&, auto &&);
+auto tree(auto, auto, auto &&);
 
 /// A consecutive group of particles.
 /// @tparam E Extra data (type of field `data`). An E object may be constructed
@@ -83,7 +83,6 @@ auto tree(auto &&, auto &&, auto &&);
 template <typename E, typename I> class Group {
   template <class, std::unsigned_integral> friend class View;
   friend void run(auto const &, auto &&);
-  friend auto tree(auto &&, auto &&, auto &&);
 
   /// @brief Non-empty range of particles (last is the past-the-end iterator).
   I first, last;
@@ -91,12 +90,44 @@ template <typename E, typename I> class Group {
   /// @brief Left-child, right-sibling pointers (empty by default).
   std::shared_ptr<Group> child, sibling;
 
+  /// @brief Only maintained for root nodes. Number of siblings (excluding
+  /// self).
+  size_t n_siblings_root{};
+
+public:
   /// @brief Extra data.
   E data{};
 
   /// Create a group of particles using iterators to particles.
   Group(I first, I last) : first{first}, last{last}, data{first, last} {}
 
+  Group(Group const &g)
+      : first{g.first}, last{g.last}, child{g.child}, sibling{g.sibling},
+        data{data}, n_siblings_root{0} {}
+
+  Group &operator=(Group const &g) {
+    if (this == &g)
+      return *this;
+    first = g.first, last = g.last, child = g.child, sibling = g.sibling,
+    data = data, n_siblings_root = 0;
+    return *this;
+  }
+
+  Group(Group &&g) noexcept
+      : first{std::move(g.first)}, last{std::move(g.last)},
+        sibling{std::move(g.sibling)}, data{std::move(data)},
+        n_siblings_root{0} {}
+
+  Group &operator=(Group &&g) noexcept {
+    if (this == &g)
+      return *this;
+    first = std::move(first), last = std::move(last),
+    child = std::move(g.child), sibling = std::move(g.sibling),
+    data = std::move(data), n_siblings_root = 0;
+    return *this;
+  }
+
+private:
   /// Iterate over the particles.
   [[nodiscard]] I begin() { return first; }
 
@@ -117,11 +148,6 @@ public:
     auto a{first};
     return ++a == last;
   }
-
-  /// Return a reference to the data.
-  [[nodiscard]] E &operator()() { return data; }
-
-  [[nodiscard]] E const &operator()() const { return data; }
 };
 
 /// A view to a set of particles.
@@ -129,7 +155,7 @@ public:
 /// @tparam M An unsigned integer type used for masking Morton (Z) codes.
 template <class I, std::unsigned_integral M> class View {
   friend void run(auto const &, auto &&);
-  friend auto tree(auto &&, auto &&, auto &&);
+  template <class> friend auto tree(auto, auto, auto &&);
 
   /// Mask (begin with the finest detail, that is, all ones, first).
   /// At all zeroes, stop processing.
@@ -164,13 +190,13 @@ template <class I, std::unsigned_integral M> class View {
       auto g = prior;
       // Merge groups having the same Morton (Z) prefixes a and b into group q.
       // p is the root (q gets updated).
-      auto p = std::make_shared<>(*g), q = p;
+      auto p = std::make_shared<Group<E, I>>(*g), q = p;
       // Let g be the child of q.
       q->child = g;
       // Let a and b be the Morton (Z) prefixes of g and h.
-      auto a = prefix(*(*g)->first); // first particle.
-      while ((g = g->sibling)) {
-        auto b = prefix(*(*g)->first); // (ditto).
+      auto a = prefix(*g->first);   // first (particle).
+      while ((g = g->sibling)) {    // assign and test.
+        auto b = prefix(*g->first); // first (particle).
         if (a == b) {
           // If same prefix, update q:
           //  - Set boundary of past-the-last particle iterator (last).
@@ -183,11 +209,13 @@ template <class I, std::unsigned_integral M> class View {
           //  - Let r remember where it comes from (g).
           //  - Let r be the sibling of q.
           //  - Replace the groups.
-          auto r = std::make_shared<>(*g);
+          //  - For the root group, increment the count.
+          auto r = std::make_shared<Group<E, I>>(*g);
           r->child = g;
           q->sibling = r;
           std::swap(q, r);
           a = b;
+          ++p->n_siblings_root;
         }
       }
       return p;
@@ -196,15 +224,17 @@ template <class I, std::unsigned_integral M> class View {
       // Let i and j be iterators to the particles.
       // Know that first != last here.
       auto j = first, i = j++;
-      auto g = std::make_shared<Group<E, I>>(i, j);
+      auto r = std::make_shared<Group<E, I>>(i, j), g = r;
       if (j == last)
         return g;
       while (++i, ++j != last) {
         auto h = std::make_shared<Group<E, I>>(i, j);
-        h->sibling = g;
+        g->sibling = h;
         std::swap(g, h);
+        // For the root group, increment the count.
+        ++r->n_siblings_root;
       }
-      return g;
+      return r;
     }
   }
 
@@ -217,26 +247,25 @@ template <class I, std::unsigned_integral M> class View {
   }
 
   /// Construct a tree and then return a root node.
-  template <class E>
-  [[nodiscard]] std::shared_ptr<Group<E, I>> tree(auto &&z) const {
-    auto siblings = [](auto &&l) {
-      size_t c{};
-      while (l)
-        ++c, l = l->sibling;
-      return c;
-    };
-    auto l = layer(z), c = siblings(l);
-    while (l) {
-      coarser(), l = layer(z, l);
+  template <class E> [[nodiscard]] std::shared_ptr<Group<E, I>> tree(auto &&z) {
+    auto l = layer<E>(z);
+    auto c = l->n_siblings_root;
+    if (!l)
+      return l;
+    for (;;) {
+      coarser();
+      auto m = layer<E>(z, l);
+      if (!m)
+        return l;
+      m->child = l;
       // Count of groups decreases if and only if further processed
       // (otherwise idempotent).
-      if (auto d = siblings(l); c == d)
+      if (auto d = m->n_siblings_root; c == d)
         // Cut tree to prevent duplicated visits during depth-first search.
         return l;
       else
-        c = d;
+        c = d, l = std::move(m);
     }
-    return l;
   }
 };
 
@@ -245,9 +274,9 @@ template <class I, std::unsigned_integral M> class View {
 /// @param last Ending iterator to the particles (possibly equal to first).
 /// @param z Given a particle and an unsigned integer mask, compute the Morton
 /// code (Z code) as an unsigned integer and then apply the mask by bitwise AND.
-auto tree(auto &&first, auto &&last, auto &&z) {
+template <class E> auto tree(auto first, auto last, auto &&z) {
   auto v = View{first, last};
-  return v.tree(z);
+  return v.template tree<E>(z);
 }
 
 /// Run the group.
@@ -257,15 +286,19 @@ void run(auto const &group, auto &&process) {
   if (!group)
     return;
   // Apply depth-first search with the stack (s) of groups.
-  auto s = std::vector{group};
+  auto s = std::vector{std::weak_ptr{group}};
   while (!s.empty()) {
-    if (auto top = s.back(); s.pop(), !process(top) && top->child)
-      // False-y value from `process`: Further detail required.
-      // Push child of top.
-      s.push_back(top->child);
-    // Push siblings of top.
-    for (auto g = group->sibling; !g.empty(); g = g->sibling)
-      s.push_back(g);
+    auto top = std::move(s.back());
+    s.pop_back();
+    if (auto t = top.lock()) {
+      if (!process(*t))
+        // False-y value from `process`: Further detail required.
+        // Push child of top.
+        s.push_back(t->child);
+      // Anyway, push siblings of top (t).
+      for (auto g = t->sibling; g; g = g->sibling)
+        s.push_back(g);
+    }
   }
 }
 

@@ -195,8 +195,6 @@ static int do_main() {
 
       namespace bh = dyn::bh32;
 
-      // Require Z-sorted particles in state.
-      bh::View<State const &> view{state};
       // Masked Morton (Z) code.
       auto morton = [](auto &&p, uint64_t m) -> std::optional<uint64_t> {
         if (auto w = p.morton(); w.has_value())
@@ -204,10 +202,8 @@ static int do_main() {
         else
           return {};
       };
-      // Compute the "levels."
-      auto levels = bh::levels<Physicals>(view, morton);
-      // Let's go. Draw the circles and particles.
-      bh::run(levels, process);
+      auto tree = bh::tree<Physicals>(state.begin(), state.end(), morton);
+      bh::run(tree, process);
     }
     EndMode2D();
 
