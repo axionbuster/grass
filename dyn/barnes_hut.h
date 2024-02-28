@@ -1,10 +1,12 @@
 #ifndef GRASS_BARNES_HUT_H
 #define GRASS_BARNES_HUT_H
 
+#include <array>
 #include <cassert>
 #include <complex>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <stack>
 #include <utility>
 
