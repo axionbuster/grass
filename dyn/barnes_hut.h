@@ -1,13 +1,9 @@
 #ifndef GRASS_BARNES_HUT_H
 #define GRASS_BARNES_HUT_H
 
-#include <algorithm>
-#include <array>
 #include <complex>
-#include <concepts>
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <vector>
 
 namespace dyn::bh32 {
@@ -72,258 +68,114 @@ std::optional<uint64_t> morton(std::complex<float> xy) {
 
 namespace detail {
 
-template <class, std::unsigned_integral M = uint64_t> class View;
-struct DeleteTree;
-void run(auto const &, auto &&);
-template <class, class I> auto tree(I, I, auto &&);
+auto tree(auto first, auto last, auto &&z);
+struct DeleteGroup;
 
-/// A consecutive group of particles.
-/// @tparam E Extra data (type of field `data`). An E object may be constructed
-/// by passing two iterators to particles ("begin" and "end") or by default
-/// construction, and it can be updated using the `+=` operator with an E object
-template <typename E, typename I> class Group {
-  template <class, std::unsigned_integral> friend class View;
-  friend struct DeleteTree;
-  friend void run(auto const &, auto &&);
+template <class I, class E> class Group {
+  friend auto tree(auto, auto, auto &&);
+  friend struct DeleteGroup;
 
-  /// @brief Non-empty range of particles (last is the past-the-end iterator).
   I first, last;
-
-  /// @brief Left-child, right-sibling pointers (empty by default).
   Group *child{}, *sibling{};
 
-  /// @brief Only maintained for root nodes. Number of siblings (excluding
-  /// self).
-  size_t n_siblings_root{};
-
 public:
-  /// @brief Extra data.
-  E data{};
+  E extra;
 
-  /// Create a group of particles using iterators to particles.
-  Group(I first, I last) : first{first}, last{last}, data{first, last} {}
   ~Group() = default;
 
 private:
-  Group(Group const &g) : first{g.first}, last{g.last}, data{g.data} {}
-  Group &operator=(Group const &g) {
-    if (this != &g)
-      first = g.first, last = g.last, data = g.data;
-    return *this;
-  }
+  Group(I first, I last) : first{first}, last{last}, extra{first, last} {}
+  Group(Group const &g) : first{g.first}, last{g.last}, extra{g.extra} {}
   Group(Group &&g) noexcept
       : first{std::move(g.first)}, last{std::move(g.last)},
-        data{std::move(g.data)} {}
+        extra{std::move(g.extra)} {}
+  Group &operator=(Group const &g) {
+    if (this != &g) {
+      first = g.first, last = g.last, extra = g.extra;
+    }
+    return *this;
+  }
   Group &operator=(Group &&g) noexcept {
-    if (this != &g)
+    if (this != &g) {
       first = std::move(g.first), last = std::move(g.last),
-      data = std::move(g.data);
+      extra = std::move(g.extra);
+    }
     return *this;
   }
 
-  /// Iterate over the particles.
-  [[nodiscard]] I begin() { return first; }
-
-  /// Iterate over the particles.
-  [[nodiscard]] I end() { return last; }
-
-  /// Iterate over the particles.
-  [[nodiscard]] I begin() const { return first; }
-
-  /// Iterate over the particles.
-  [[nodiscard]] I end() const { return last; }
-
-public:
-  /// Test whether this group holds exactly one particle.
-  [[nodiscard]] bool single() const {
-    if (first == last)
-      return false;
-    auto a{first};
-    return ++a == last;
-  }
-};
-
-/// A view to a set of particles.
-/// @tparam I Iterator of particles.
-/// @tparam M An unsigned integer type used for masking Morton (Z) codes.
-template <class I, std::unsigned_integral M> class View {
-  friend void run(auto const &, auto &&);
-  template <class, class J> friend auto tree(J, J, auto &&);
-
-  /// Mask (begin with the finest detail, that is, all ones, first).
-  /// At all zeroes, stop processing.
-  M mask = ~M{};
-
-  /// Iterators over the particles. Possibly empty.
-  I first, last;
-
-  /// Compute the groups at the current level of detail.
-  /// @tparam E Extra data type.
-  /// @param z Take the particle and then compute the Morton (Z) code masked by
-  /// the given M-type mask.
-  /// @param prior The result of this function call for one finer level of
-  /// detail (see `coarser`).
-  template <class E>
-  [[nodiscard]] Group<E, I> *layer(auto &&z,
-                                   Group<E, I> *const &prior = {}) const {
-    if (!mask || first == last)
-      // Empty output is used as a sentinel to halt processing by the free
-      // function `run`.
-      return {};
-
-    // prefix: Compute the masked Morton (Z) code, which computes the prefix
-    // bits (less significant bits cut off).
-    std::unsigned_integral auto m = mask;
-    auto prefix = [&z, m](auto &&p) { return z(p, m); };
-
-    if (prior) {
-      // One finer level of detail exists in `prior`.
-      // Merge the groups, then, instead of recalculating everything.
-      // Two-pointer solution (let g and h be pointers to groups).
-      auto g = prior;
-      // Merge groups having the same Morton (Z) prefixes a and b into group q.
-      // p is the root (q gets updated).
-      auto p = new Group{*g}, q = p;
-      // Let g be the child of q.
-      q->child = g;
-      // Let a and b be the Morton (Z) prefixes of g and h.
-      auto a = prefix(*g->first);   // first (particle).
-      while ((g = g->sibling)) {    // assign and test.
-        auto b = prefix(*g->first); // first (particle).
-        if (a == b) {
-          // If same prefix, update q:
-          //  - Set boundary of past-the-last particle iterator (last).
-          //  - Merge physical summary data (+=).
-          q->last = g->last;
-          q->data += g->data;
-        } else {
-          // New prefix:
-          //  - New group (r).
-          //  - Let r remember where it comes from (g).
-          //  - Let r be the sibling of q.
-          //  - Replace the groups.
-          //  - For the root group, increment the count.
-          auto r = new Group{*g};
-          r->child = g;
-          q->sibling = r;
-          q = r;
-          a = b;
-          ++p->n_siblings_root;
-        }
+  static void preorder(auto g, auto &&f) {
+    if (!g)
+      return;
+    auto v = std::vector{g};
+    while (!v.empty()) {
+      auto h = v.back();
+      v.pop_back();
+      if (auto a = h->child) {
+        v.push_back(a);
+        for (auto b = a->sibling; b; b = b->sibling)
+          v.push_back(b);
       }
-      return p;
-    } else {
-      // First call? No problem. Turn each particle into a group.
-      // Let i and j be iterators to the particles.
-      // Know that first != last here.
-      auto j = first, i = j++;
-      auto r = new Group<E, I>{i, j}, g = r;
-      if (j == last)
-        return g;
-      while (++i, ++j != last) {
-        auto h = new Group<E, I>{i, j};
-        g->sibling = h;
-        std::swap(g, h);
-        // For the root group, increment the count.
-        ++r->n_siblings_root;
-      }
-      return r;
-    }
-  }
-
-  View(I first, I last) : first{first}, last{last} {}
-
-  /// Make the level of detail one level coarser.
-  void coarser() {
-    // Let `mask` run off to zero if at last level of detail.
-    mask <<= 2;
-  }
-
-  /// Construct a tree and then return a root node.
-  template <class E> [[nodiscard]] Group<E, I> *tree(auto &&z) {
-    auto l = layer<E>(z);
-    if (!l)
-      return l;
-    auto c = l->n_siblings_root;
-    for (;;) {
-      coarser();
-      auto m = layer<E>(z, l);
-      if (!m)
-        return l;
-      m->child = l;
-      // Count of groups decreases if and only if further processed
-      // (otherwise idempotent).
-      if (auto d = m->n_siblings_root; c == d)
-        // Cut tree to prevent duplicated visits during depth-first search.
-        return (delete m), l;
-      else
-        c = d, l = m;
+      f(h);
     }
   }
 };
 
-struct DeleteTree {
-  void operator()(auto *p) const {
-    if (p->child) {
-      auto v = std::vector{p->child};
-      p = p->child;
-      while ((p = p->child))
-        v.push_back(p);
-      while (!v.empty()) {
-        auto t = v.back();
-        v.pop_back();
-        delete t;
-      }
-      p->child = {};
-    }
-    if (p->sibling) {
-      auto v = std::vector{p->sibling};
-      p = p->sibling;
-      while ((p = p->sibling))
-        v.push_back(p);
-      while (!v.empty()) {
-        auto t = v.back();
-        v.pop_back();
-        delete t;
-      }
-      p->sibling = {};
-    }
-    delete p;
+struct DeleteGroup {
+  void operator()(auto g) const {
+    decltype(g)::preorder(g, [](auto h) { return delete h; });
   }
 };
 
-inline constexpr DeleteTree deleteTree;
+inline DeleteGroup constexpr deleteGroup;
 
-/// Construct a tree given an iterator to particles.
-/// @param first Beginning iterator to the particles.
-/// @param last Ending iterator to the particles (possibly equal to first).
-/// @param z Given a particle and an unsigned integer mask, compute the Morton
-/// code (Z code) as an unsigned integer and then apply the mask by bitwise AND.
-template <class E, class I> auto tree(I first, I last, auto &&z) {
-  auto v = View{first, last};
-  return std::unique_ptr<Group<E, I>, DeleteTree>{v.template tree<E>(z),
-                                                  deleteTree};
-}
+template <class I, class E>
+std::unique_ptr<Group<I, E>, DeleteGroup> tree(I const first, I const last,
+                                               auto &&z) {
+  struct {
+    uint64_t mask = ~uint64_t{};
+    void shift() { mask <<= 2; }
+  } state;
+  typedef Group<I, E> Group;
 
-/// Run the group.
-/// @param group Return value of a call to `tree`.
-/// @param process Given a reference to a group,
-void run(auto const &group, auto &&process) {
-  if (!group)
-    return;
-  // Apply depth-first search with the stack (s) of groups.
-  auto s = std::vector{group.get()};
-  while (!s.empty()) {
-    auto t = s.back();
-    s.pop_back();
-    if (!process(*t))
-      // False-y value from `process`: Further detail required.
-      // Push child of top.
-      s.push_back(t->child);
-    // Anyway, push siblings of top (t).
-    for (auto g = t->sibling; g; g = g->sibling)
-      s.push_back(g);
+  // Turn every particle into a group.
+  if (first == last)
+    return {};
+  I b = first, a = b++;
+  auto *g = new Group{a, b};
+  if (b == last)
+    return {g, deleteGroup};
+  auto *h = g;
+  do {
+    ++a, ++b;
+    auto *i = new Group{a, b};
+    h->sibling = i;
+    h = i;
+  } while (b != last);
+
+  // Let's move out.
+  h = new Group{*g};
+  auto *i = h;
+  h->child = g;
+  state.shift();
+  bool count{};
+  auto prefix = [&z, &state](auto &&a) { return z(a, state.mask); };
+  auto *m = g;
+  auto c = prefix(*m);
+  for (auto *n = m->sibling; n; n = n->sibling) {
+    auto d = prefix(*n);
+    if (c != d) {
+      i->sibling = new Group{m, n};
+      i = i->sibling;
+      c = d;
+      count = true;
+    }
   }
+  if (!count) {
+    h->child = {};
+    deleteGroup(h);
+  }
+
+  // FIXME: Put in loop; comment.
 }
 
 } // namespace detail
