@@ -193,7 +193,7 @@ template <class E, class I> auto tree(I const first, I const last, auto &&z) {
       // h has a lower level of detail than both.
       auto d = prefix(*i->first);
       if (c != d) {
-        h = std::exchange(h->sibling, new G{g, i});
+        h = h->sibling = new G{g, i};
         g = i;
         c = d;
         same = false;
