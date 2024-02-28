@@ -79,6 +79,8 @@ struct Physicals {
     radius = std::max(radius, p.radius + std::abs(p.xy - xy));
     return *this;
   }
+
+  [[nodiscard]] bool single() const { return count == 1.0f; }
 };
 
 /// Store particles
@@ -161,10 +163,8 @@ static int do_main() {
       // or if all the particles could be discarded (REMOVE).
       auto process = [&user, w_mouse, tan_angle_threshold,
                       max_view_distance](auto &&g) {
-        auto gxy = g.data.xy;
-        auto gr = g.data.radius;
-        auto dist = std::abs(gxy - w_mouse);
-        if (max_view_distance < dist - gr)
+        auto dist = std::abs(g.xy - w_mouse);
+        if (max_view_distance < dist - g.radius)
           // Too far from the boundary of the group's circle.
           return ERASE;
         auto square = [](auto x) { return x * x; };
@@ -172,9 +172,9 @@ static int do_main() {
         if (g.single())
           // This group (g) wraps a single particle.
           // Process and then forget.
-          return user.dot(gxy, Fade(WHITE, dim)), ERASE;
+          return user.dot(g.xy, Fade(WHITE, dim)), ERASE;
         // Test the distance and the (approximate) viewing angle.
-        if (dist < gr)
+        if (dist < g.radius)
           // This group (g)'s circle contains the given point (w_mouse).
           // Higher level of detail required.
           return KEEP;
@@ -184,12 +184,13 @@ static int do_main() {
         // endpoint and the ray of the line of sight. This is an
         // underapproximation (but a good one) of one-half of the true view
         // angle.
-        if (auto tan = gr / dist; tan_angle_threshold < tan)
+        if (auto tan = g.radius / dist; tan_angle_threshold < tan)
           // View angle too wide; higher detail required.
           return KEEP;
         // View angle is small enough. Treat g as a point particle. Draw the
         // circle that represents g for visualization.
-        DrawCircleLinesV({gxy.real(), gxy.imag()}, gr, Fade(YELLOW, dim));
+        DrawCircleLinesV({g.xy.real(), g.xy.imag()}, g.radius,
+                         Fade(YELLOW, dim));
         return ERASE;
       };
 
@@ -203,7 +204,7 @@ static int do_main() {
           return {};
       };
       auto tree = bh::tree<Physicals>(state.begin(), state.end(), morton);
-      bh::run(tree, process);
+      bh::run(&*tree, process);
     }
     EndMode2D();
 

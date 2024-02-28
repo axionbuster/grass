@@ -1,10 +1,12 @@
 #ifndef GRASS_BARNES_HUT_H
 #define GRASS_BARNES_HUT_H
 
+#include <cassert>
 #include <complex>
 #include <cstdint>
 #include <memory>
-#include <vector>
+#include <stack>
+#include <utility>
 
 namespace dyn::bh32 {
 
@@ -68,11 +70,13 @@ std::optional<uint64_t> morton(std::complex<float> xy) {
 
 namespace detail {
 
-auto tree(auto first, auto last, auto &&z);
+template <class, class I> auto tree(I, I, auto &&);
+void run(auto const *, auto &&);
 struct DeleteGroup;
 
 template <class I, class E> class Group {
-  friend auto tree(auto, auto, auto &&);
+  template <class, class J> friend auto tree(J, J, auto &&);
+  friend void run(auto const *, auto &&);
   friend struct DeleteGroup;
 
   I first, last;
@@ -84,15 +88,20 @@ public:
   ~Group() = default;
 
 private:
-  Group(I first, I last) : first{first}, last{last}, extra{first, last} {}
   Group(Group const &g) : first{g.first}, last{g.last}, extra{g.extra} {}
+  Group(I first, I last) : first{first}, last{last}, extra{first, last} {}
+  Group(Group *a, Group *b) : first{a->first}, last{b->last} {
+    child = a;
+    extra = a->extra;
+    for (Group *c = a->sibling; c && c != b; c = c->sibling)
+      extra += c->extra;
+  }
   Group(Group &&g) noexcept
       : first{std::move(g.first)}, last{std::move(g.last)},
         extra{std::move(g.extra)} {}
   Group &operator=(Group const &g) {
-    if (this != &g) {
+    if (this != &g)
       first = g.first, last = g.last, extra = g.extra;
-    }
     return *this;
   }
   Group &operator=(Group &&g) noexcept {
@@ -103,79 +112,114 @@ private:
     return *this;
   }
 
-  static void preorder(auto g, auto &&f) {
+  static void depth_first_delete(Group *g) {
     if (!g)
       return;
-    auto v = std::vector{g};
+    std::stack<Group *> v;
     while (!v.empty()) {
-      auto h = v.back();
-      v.pop_back();
-      if (auto a = h->child) {
-        v.push_back(a);
-        for (auto b = a->sibling; b; b = b->sibling)
-          v.push_back(b);
-      }
-      f(h);
+      auto h = v.top();
+      v.pop();
+      for (auto a = h->child; a; a = a->sibling)
+        v.push(a);
+      delete h;
+    }
+  }
+
+  static void depth_first(Group const *g, auto &&deeper) {
+    if (!g)
+      return;
+    std::stack<Group const *> v;
+    while (!v.empty()) {
+      auto h = v.top();
+      v.pop();
+      for (auto i = h->child; i; i = i->sibling)
+        if (deeper(i->extra))
+          v.push(i);
     }
   }
 };
 
 struct DeleteGroup {
-  void operator()(auto g) const {
-    decltype(g)::preorder(g, [](auto h) { return delete h; });
-  }
+  template <class G> void operator()(G *g) const { G::depth_first_delete(g); }
 };
 
 inline DeleteGroup constexpr deleteGroup;
 
-template <class I, class E>
-std::unique_ptr<Group<I, E>, DeleteGroup> tree(I const first, I const last,
-                                               auto &&z) {
+template <class E, class I> auto tree(I const first, I const last, auto &&z) {
   struct {
     uint64_t mask = ~uint64_t{};
     void shift() { mask <<= 2; }
   } state;
-  typedef Group<I, E> Group;
+  using G = Group<I, E>;
+  using P = std::shared_ptr<G>;
 
   // Turn every particle into a group.
   if (first == last)
-    return {};
+    // Degeneracy 0 (no particles).
+    return P{};
+  // Let a and b be iterators to the particles exactly one particle apart.
   I b = first, a = b++;
-  auto *g = new Group{a, b};
+  auto *g = new G{a, b};
   if (b == last)
-    return {g, deleteGroup};
+    // Degeneracy 1 (one particle).
+    return P{g, deleteGroup};
+  // Ordinary case (two+ particles).
+  // Let g and h be pointers to groups.
   auto *h = g;
   do {
+    // Still, a and b are one particle apart.
     ++a, ++b;
-    auto *i = new Group{a, b};
-    h->sibling = i;
-    h = i;
+    // g, h, and i are groups with the same level of detail.
+    h->sibling = new G{a, b};
+    h = h->sibling;
   } while (b != last);
 
-  // Let's move out.
-  h = new Group{*g};
-  auto *i = h;
+  // Let's move out (lower level of detail).
+  // Merge groups with the same Morton code (Z-code) prefixes.
+
+  // h has (will have) a lower level of detail than g.
+  h = new G{*g};
   h->child = g;
   state.shift();
-  bool count{};
-  auto prefix = [&z, &state](auto &&a) { return z(a, state.mask); };
-  auto *m = g;
-  auto c = prefix(*m);
-  for (auto *n = m->sibling; n; n = n->sibling) {
-    auto d = prefix(*n);
-    if (c != d) {
-      i->sibling = new Group{m, n};
-      i = i->sibling;
-      c = d;
-      count = true;
+  while (state.mask) {
+    auto prefix = [&z, &state](auto &&a) { return z(a, state.mask); };
+    auto c = prefix(*g->first);
+    // same: Built exactly the same layer?
+    auto same = true;
+    for (auto *i = g->sibling; i; i = i->sibling) {
+      // g (unchanging in this loop) and i have the same level of detail.
+      // h has a lower level of detail than both.
+      auto d = prefix(*i->first);
+      if (c != d) {
+        h = std::exchange(h->sibling, new G{g, i});
+        g = i;
+        c = d;
+        same = false;
+      }
     }
-  }
-  if (!count) {
-    h->child = {};
-    deleteGroup(h);
+
+    // If built exactly the same layer then just use the old layer.
+    g = h;
+    if (same) {
+      auto *j = std::exchange(g->child, {});
+      deleteGroup(g);
+      g = j;
+    }
+
+    // Build new layer.
+    h = new G{*g};
+    h->child = g;
+    state.shift();
   }
 
-  // FIXME: Put in loop; comment.
+  // Mark special (empty range) -> root.
+  h->first = h->last;
+  assert(!h->sibling);
+  return P{h, deleteGroup};
+}
+
+void run(auto const *group, auto &&f) {
+  std::remove_reference_t<decltype(*group)>::depth_first(group, f);
 }
 
 } // namespace detail
