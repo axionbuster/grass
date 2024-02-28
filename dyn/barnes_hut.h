@@ -145,7 +145,7 @@ struct DeleteGroup {
   template <class G> void operator()(G *g) const { G::depth_first_delete(g); }
 };
 
-inline DeleteGroup constexpr deleteGroup;
+inline DeleteGroup constexpr delete_group;
 
 template <class E, class I> auto tree(I const first, I const last, auto &&z) {
   struct {
@@ -164,7 +164,7 @@ template <class E, class I> auto tree(I const first, I const last, auto &&z) {
   auto *g = new G{a, b};
   if (b == last)
     // Degeneracy 1 (one particle).
-    return P{g, deleteGroup};
+    return P{g, delete_group};
   // Ordinary case (two+ particles).
   // Let g and h be pointers to groups.
   auto *h = g;
@@ -204,7 +204,7 @@ template <class E, class I> auto tree(I const first, I const last, auto &&z) {
     g = h;
     if (same) {
       auto *j = std::exchange(g->child, {});
-      deleteGroup(g);
+      delete_group(g);
       g = j;
     }
 
@@ -217,7 +217,7 @@ template <class E, class I> auto tree(I const first, I const last, auto &&z) {
   // Mark special (empty range) -> root.
   h->first = h->last;
   assert(!h->sibling);
-  return P{h, deleteGroup};
+  return P{h, delete_group};
 }
 
 void run(auto const *group, auto &&f) {
