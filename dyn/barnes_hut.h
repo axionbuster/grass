@@ -73,8 +73,9 @@ std::optional<uint64_t> morton(std::complex<float> xy) {
 namespace detail {
 
 template <class, std::unsigned_integral M = uint64_t> class View;
-void run(auto const &group, auto &&process);
-auto tree(auto, auto, auto &&);
+struct DeleteTree;
+void run(auto const &, auto &&);
+template <class, class I> auto tree(I, I, auto &&);
 
 /// A consecutive group of particles.
 /// @tparam E Extra data (type of field `data`). An E object may be constructed
@@ -82,13 +83,14 @@ auto tree(auto, auto, auto &&);
 /// construction, and it can be updated using the `+=` operator with an E object
 template <typename E, typename I> class Group {
   template <class, std::unsigned_integral> friend class View;
+  friend struct DeleteTree;
   friend void run(auto const &, auto &&);
 
   /// @brief Non-empty range of particles (last is the past-the-end iterator).
   I first, last;
 
   /// @brief Left-child, right-sibling pointers (empty by default).
-  std::shared_ptr<Group> child, sibling;
+  Group *child{}, *sibling{};
 
   /// @brief Only maintained for root nodes. Number of siblings (excluding
   /// self).
@@ -100,34 +102,25 @@ public:
 
   /// Create a group of particles using iterators to particles.
   Group(I first, I last) : first{first}, last{last}, data{first, last} {}
-
-  Group(Group const &g)
-      : first{g.first}, last{g.last}, child{g.child}, sibling{g.sibling},
-        data{data}, n_siblings_root{0} {}
-
-  Group &operator=(Group const &g) {
-    if (this == &g)
-      return *this;
-    first = g.first, last = g.last, child = g.child, sibling = g.sibling,
-    data = data, n_siblings_root = 0;
-    return *this;
-  }
-
-  Group(Group &&g) noexcept
-      : first{std::move(g.first)}, last{std::move(g.last)},
-        sibling{std::move(g.sibling)}, data{std::move(data)},
-        n_siblings_root{0} {}
-
-  Group &operator=(Group &&g) noexcept {
-    if (this == &g)
-      return *this;
-    first = std::move(first), last = std::move(last),
-    child = std::move(g.child), sibling = std::move(g.sibling),
-    data = std::move(data), n_siblings_root = 0;
-    return *this;
-  }
+  ~Group() = default;
 
 private:
+  Group(Group const &g) : first{g.first}, last{g.last}, data{g.data} {}
+  Group &operator=(Group const &g) {
+    if (this != &g)
+      first = g.first, last = g.last, data = g.data;
+    return *this;
+  }
+  Group(Group &&g) noexcept
+      : first{std::move(g.first)}, last{std::move(g.last)},
+        data{std::move(g.data)} {}
+  Group &operator=(Group &&g) noexcept {
+    if (this != &g)
+      first = std::move(g.first), last = std::move(g.last),
+      data = std::move(g.data);
+    return *this;
+  }
+
   /// Iterate over the particles.
   [[nodiscard]] I begin() { return first; }
 
@@ -155,7 +148,7 @@ public:
 /// @tparam M An unsigned integer type used for masking Morton (Z) codes.
 template <class I, std::unsigned_integral M> class View {
   friend void run(auto const &, auto &&);
-  template <class> friend auto tree(auto, auto, auto &&);
+  template <class, class J> friend auto tree(J, J, auto &&);
 
   /// Mask (begin with the finest detail, that is, all ones, first).
   /// At all zeroes, stop processing.
@@ -171,8 +164,8 @@ template <class I, std::unsigned_integral M> class View {
   /// @param prior The result of this function call for one finer level of
   /// detail (see `coarser`).
   template <class E>
-  [[nodiscard]] std::shared_ptr<Group<E, I>>
-  layer(auto &&z, std::shared_ptr<Group<E, I>> const &prior = {}) const {
+  [[nodiscard]] Group<E, I> *layer(auto &&z,
+                                   Group<E, I> *const &prior = {}) const {
     if (!mask || first == last)
       // Empty output is used as a sentinel to halt processing by the free
       // function `run`.
@@ -190,7 +183,7 @@ template <class I, std::unsigned_integral M> class View {
       auto g = prior;
       // Merge groups having the same Morton (Z) prefixes a and b into group q.
       // p is the root (q gets updated).
-      auto p = std::make_shared<Group<E, I>>(*g), q = p;
+      auto p = new Group{*g}, q = p;
       // Let g be the child of q.
       q->child = g;
       // Let a and b be the Morton (Z) prefixes of g and h.
@@ -210,10 +203,10 @@ template <class I, std::unsigned_integral M> class View {
           //  - Let r be the sibling of q.
           //  - Replace the groups.
           //  - For the root group, increment the count.
-          auto r = std::make_shared<Group<E, I>>(*g);
+          auto r = new Group{*g};
           r->child = g;
           q->sibling = r;
-          std::swap(q, r);
+          q = r;
           a = b;
           ++p->n_siblings_root;
         }
@@ -224,11 +217,11 @@ template <class I, std::unsigned_integral M> class View {
       // Let i and j be iterators to the particles.
       // Know that first != last here.
       auto j = first, i = j++;
-      auto r = std::make_shared<Group<E, I>>(i, j), g = r;
+      auto r = new Group<E, I>{i, j}, g = r;
       if (j == last)
         return g;
       while (++i, ++j != last) {
-        auto h = std::make_shared<Group<E, I>>(i, j);
+        auto h = new Group<E, I>{i, j};
         g->sibling = h;
         std::swap(g, h);
         // For the root group, increment the count.
@@ -247,11 +240,11 @@ template <class I, std::unsigned_integral M> class View {
   }
 
   /// Construct a tree and then return a root node.
-  template <class E> [[nodiscard]] std::shared_ptr<Group<E, I>> tree(auto &&z) {
+  template <class E> [[nodiscard]] Group<E, I> *tree(auto &&z) {
     auto l = layer<E>(z);
-    auto c = l->n_siblings_root;
     if (!l)
       return l;
+    auto c = l->n_siblings_root;
     for (;;) {
       coarser();
       auto m = layer<E>(z, l);
@@ -262,21 +255,54 @@ template <class I, std::unsigned_integral M> class View {
       // (otherwise idempotent).
       if (auto d = m->n_siblings_root; c == d)
         // Cut tree to prevent duplicated visits during depth-first search.
-        return l;
+        return (delete m), l;
       else
-        c = d, l = std::move(m);
+        c = d, l = m;
     }
   }
 };
+
+struct DeleteTree {
+  void operator()(auto *p) const {
+    if (p->child) {
+      auto v = std::vector{p->child};
+      p = p->child;
+      while ((p = p->child))
+        v.push_back(p);
+      while (!v.empty()) {
+        auto t = v.back();
+        v.pop_back();
+        delete t;
+      }
+      p->child = {};
+    }
+    if (p->sibling) {
+      auto v = std::vector{p->sibling};
+      p = p->sibling;
+      while ((p = p->sibling))
+        v.push_back(p);
+      while (!v.empty()) {
+        auto t = v.back();
+        v.pop_back();
+        delete t;
+      }
+      p->sibling = {};
+    }
+    delete p;
+  }
+};
+
+inline constexpr DeleteTree deleteTree;
 
 /// Construct a tree given an iterator to particles.
 /// @param first Beginning iterator to the particles.
 /// @param last Ending iterator to the particles (possibly equal to first).
 /// @param z Given a particle and an unsigned integer mask, compute the Morton
 /// code (Z code) as an unsigned integer and then apply the mask by bitwise AND.
-template <class E> auto tree(auto first, auto last, auto &&z) {
+template <class E, class I> auto tree(I first, I last, auto &&z) {
   auto v = View{first, last};
-  return v.template tree<E>(z);
+  return std::unique_ptr<Group<E, I>, DeleteTree>{v.template tree<E>(z),
+                                                  deleteTree};
 }
 
 /// Run the group.
@@ -286,19 +312,17 @@ void run(auto const &group, auto &&process) {
   if (!group)
     return;
   // Apply depth-first search with the stack (s) of groups.
-  auto s = std::vector{std::weak_ptr{group}};
+  auto s = std::vector{group.get()};
   while (!s.empty()) {
-    auto top = std::move(s.back());
+    auto t = s.back();
     s.pop_back();
-    if (auto t = top.lock()) {
-      if (!process(*t))
-        // False-y value from `process`: Further detail required.
-        // Push child of top.
-        s.push_back(t->child);
-      // Anyway, push siblings of top (t).
-      for (auto g = t->sibling; g; g = g->sibling)
-        s.push_back(g);
-    }
+    if (!process(*t))
+      // False-y value from `process`: Further detail required.
+      // Push child of top.
+      s.push_back(t->child);
+    // Anyway, push siblings of top (t).
+    for (auto g = t->sibling; g; g = g->sibling)
+      s.push_back(g);
   }
 }
 
