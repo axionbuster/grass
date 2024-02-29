@@ -72,12 +72,12 @@ std::optional<uint64_t> morton(std::complex<float> xy) {
 
 namespace detail {
 
-template <class, class I> auto tree(I, I, auto &&);
+template <class, class I> auto tree(I, I, auto &&) noexcept;
 void run(auto const *, auto &&);
 struct DeleteGroup;
 
 template <class I, class E> class Group {
-  template <class, class J> friend auto tree(J, J, auto &&);
+  template <class, class J> friend auto tree(J, J, auto &&) noexcept;
   friend void run(auto const *, auto &&);
   friend struct DeleteGroup;
 
@@ -90,16 +90,17 @@ public:
   ~Group() = default;
 
 private:
-  Group(Group const &g) : first{g.first}, last{g.last}, extra{g.extra} {}
-  Group(I first, I last) : first{first}, last{last}, extra{first, last} {}
-  Group(Group *a, Group *b) : first{a->first} {
+  Group(I const first, I const last)
+      : first{first}, last{last}, extra{first, last} {}
+  Group(Group *const a, Group *const b) : first{a->first} {
+    // b can be nullptr.
     extra = a->extra;
-    for (Group *c = a->sibling; c && c != b; c = c->sibling)
+    for (auto *c = a->sibling; c && c != b; c = c->sibling)
       extra += c->extra, last = c->last;
   }
   void clear_relationships() { child = {}, sibling = {}; };
 
-  static void depth_first_delete(Group *g) {
+  static void depth_first_delete(Group *const g) {
     if (!g)
       return;
     std::stack<Group *> v;
@@ -113,6 +114,8 @@ private:
     }
   }
 
+  /// Apply depth-first traversal. If `deeper` suggests going deeper (true),
+  /// go deeper.
   static void depth_first(Group const *g, auto &&deeper) {
     if (!g)
       return;
@@ -128,13 +131,20 @@ private:
   }
 };
 
+void run(auto const *const group, auto &&deeper) {
+  std::remove_reference_t<decltype(*group)>::depth_first(group, deeper);
+}
+
 struct DeleteGroup {
-  template <class G> void operator()(G *g) const { G::depth_first_delete(g); }
+  template <class G> void operator()(G *const g) const {
+    G::depth_first_delete(g);
+  }
 };
 
 inline DeleteGroup constexpr delete_group;
 
-template <class E, class I> auto tree(I const first, I const last, auto &&z) {
+template <class E, class I>
+auto tree(I const first, I const last, auto &&z) noexcept {
   struct {
     uint64_t mask = ~uint64_t{};
     void shift() { mask <<= 2; }
@@ -143,7 +153,6 @@ template <class E, class I> auto tree(I const first, I const last, auto &&z) {
   using P = std::shared_ptr<G>;
 
   // Turn every particle into a group.
-  // Return the first sibling (g).
   auto lift = [first, last]() -> G * {
     if (first == last)
       // Degeneracy 0 (no particles).
@@ -175,57 +184,44 @@ template <class E, class I> auto tree(I const first, I const last, auto &&z) {
   }
 
   auto constexpr SAME = true;
-
   auto prefix = [&z, &state](auto &&a) { return z(a, state.mask); };
-  auto complete = [&state, &prefix](auto *const g) {
+  auto complete = [&prefix](auto *g) {
+    assert(g && !g->sibling);
     auto same = SAME;
-    G *prev = {}, *l = g->child;
+    auto *l = g->child;
     if (!l)
       return same;
     auto a = prefix(*l->first);
     for (auto *m = l->sibling; m; m = m->sibling) {
       if (auto b = prefix(*m->first); a != b) {
         auto *h = new Group{l, m};
-        if (prev) {
-          assert(!prev->sibling);
-          prev->sibling = h;
-        }
-        prev = h;
-        l = m;
-        a = b;
+        g->sibling = h;
+        g = h, l = m, a = b;
         same = false;
       }
     }
     auto *h = new Group{l, {}};
-    if (prev) {
-      assert(!prev->sibling);
-      prev->sibling = h;
-    }
+    g->sibling = h;
     return same;
   };
 
-  auto *root_above = new G{*g};
-  root_above->clear_relationships();
-  root_above->child = g;
+  auto *root = new G{*g};
+  root->clear_relationships();
+  root->child = g;
   while (state.mask) {
-    if (state.shift(), complete(root_above) == SAME) {
-      // Re-use underlying layer.
-      auto *h = std::exchange(root_above->child, {});
-      delete_group(std::exchange(root_above, h));
+    if (state.shift(), complete(root) == SAME) {
+      auto *child = root->child;
+      for (auto *n = root; n; delete std::exchange(n, n->sibling))
+        ;
+      root = child;
     }
-    auto *j = std::exchange(root_above, new G{*root_above});
-    root_above->clear_relationships();
-    root_above->child = j;
+    auto *j = std::exchange(root, new G{*root});
+    root->clear_relationships();
+    root->child = j;
   }
 
-  // Mark special (empty range) -> root.
-  root_above->first = root_above->last;
-  assert(!root_above->sibling);
-  return P{root_above, delete_group};
-}
-
-void run(auto const *group, auto &&f) {
-  std::remove_reference_t<decltype(*group)>::depth_first(group, f);
+  assert(!root->sibling);
+  return P{root, delete_group};
 }
 
 } // namespace detail
