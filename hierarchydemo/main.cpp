@@ -68,7 +68,7 @@ struct Physicals {
   Physicals &operator+=(Physicals const &p) {
     if (this == &p)
       // Cannot violate const contract.
-      return count *= 2.0f, *this;
+      return count += count, *this;
     // Compute the new average xy.
     auto sum = count + p.count;
     auto proportion0 = count / sum;
@@ -86,7 +86,7 @@ struct Physicals {
 /// Store particles
 struct State : public std::vector<Particle> {
   /// Construct a few particles.
-  State(int N = 5) {
+  State(int N = 2) {
     std::mt19937 r(std::random_device{}());
     std::normal_distribution<float> z;
     for (auto i = 0; i < N; i++)

@@ -8,7 +8,6 @@
 #include <memory>
 #include <optional>
 #include <stack>
-#include <utility>
 
 namespace dyn::bh32 {
 
@@ -103,15 +102,19 @@ private:
   static void depth_first_delete(Group *const g) {
     if (!g)
       return;
+    size_t debug_count{};
     std::stack<Group *> v;
     v.push(g);
     while (!v.empty()) {
+      debug_count++;
       auto h = v.top();
+      assert(h);
       v.pop();
       for (auto a = h->child; a; a = a->sibling)
         v.push(a);
       delete h;
     }
+    (void)debug_count;
   }
 
   /// Apply depth-first traversal. If `deeper` suggests going deeper (true),
@@ -119,15 +122,17 @@ private:
   static void depth_first(Group const *g, auto &&deeper) {
     if (!g)
       return;
+    size_t debug_count{};
     std::stack<Group const *> v;
     v.push(g);
     while (!v.empty()) {
       auto h = v.top();
       v.pop();
       for (auto i = h->child; i; i = i->sibling)
-        if (deeper(i->extra))
+        if (++debug_count, deeper(i->extra))
           v.push(i);
     }
+    (void)debug_count;
   }
 };
 
@@ -148,6 +153,7 @@ auto tree(I const first, I const last, auto &&z) noexcept {
   struct {
     uint64_t mask = ~uint64_t{};
     void shift() { mask <<= 2; }
+    void halt() { mask = {}; }
   } state;
   using G = Group<I, E>;
   using P = std::shared_ptr<G>;
@@ -159,7 +165,7 @@ auto tree(I const first, I const last, auto &&z) noexcept {
       return {};
     // Let a and b be iterators to the particles exactly one particle apart.
     I b = first, a = b++;
-    auto *g = new G{a, b};
+    auto *const g = new G{a, b};
     if (b == last)
       // Degeneracy 1 (one particle).
       return g;
@@ -182,42 +188,51 @@ auto tree(I const first, I const last, auto &&z) noexcept {
     return P{root, delete_group};
   }
 
-  auto constexpr SAME = true;
   auto prefix = [&z, &state](auto &&a) { return z(a, state.mask); };
-  auto complete = [&prefix](auto *g) {
+  auto complete = [&prefix, &state](auto *g) {
     assert(g && !g->sibling);
-    auto same = SAME;
     auto *l = g->child;
     if (!l)
-      return same;
+      return;
     auto a = prefix(*l->first);
-    for (auto *m = l->sibling; m; m = m->sibling) {
+    auto same = true;
+    for (auto *m = l->sibling; m;) {
       if (auto b = prefix(*m->first); a != b) {
-        g = g->sibling = new G{l, m};
-        l = m, a = b, same = false;
+        if (l->sibling == m) {
+          l->sibling = m->sibling;
+          m->sibling = {};
+          g = g->sibling = m;
+          m = l->sibling;
+        } else {
+          assert(!g->sibling);
+          g = g->sibling = new G{l, m};
+          l = m;
+          m = l->sibling;
+        }
+        a = b;
+      } else {
+        same = false;
+        m = m->sibling;
       }
     }
+    if (same)
+      return state.halt();
     assert(!g->sibling);
     g->sibling = new G{l, {}};
-    return same;
+    return;
   };
 
   auto *root = new G{*g};
   root->clear_relationships();
   root->child = g;
   while (state.mask) {
-    if (state.shift(), complete(root) == SAME) {
-      auto *child = root->child;
-      for (auto *n = root; n; delete std::exchange(n, n->sibling))
-        ;
-      root = child;
-    }
-    auto *j = std::exchange(root, new G{*root});
+    state.shift(), complete(root);
+    auto *j = root;
+    root = new G{*root};
     root->clear_relationships();
     root->child = j;
   }
 
-  assert(!root->sibling);
   return P{root, delete_group};
 }
 
