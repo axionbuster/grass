@@ -91,12 +91,8 @@ public:
 private:
   Group(I const first, I const last)
       : first{first}, last{last}, extra{first, last} {}
-  Group(Group *const a, Group *const b) : first{a->first} {
-    // b can be nullptr.
-    extra = a->extra;
-    for (auto *c = a->sibling; c && c != b; c = c->sibling)
-      extra += c->extra, last = c->last;
-  }
+  Group(I const first, I const last, E const extra)
+      : first{first}, last{last}, extra{extra} {}
   void clear_relationships() { child = {}, sibling = {}; };
 
   static void depth_first_delete(Group *const g) {
@@ -166,75 +162,75 @@ auto tree(I const first, I const last, auto &&z) noexcept {
     // Let a and b be iterators to the particles exactly one particle apart
     // (single-particle range).
     I b = first, a = b++;
-    auto *const g = new G{a, b};
+    auto *g = new G{a, b};
     if (b == last)
       // Degeneracy 1 (one particle).
       return g;
     // Ordinary case (two+ particles).
     // Let g and h be pointers to groups.
     auto *root = new G{a, b}; // (minimize work).
+    root->last = last;
     root->child = g;
     do {
       ++a, ++b;
       g = g->sibling = new G{a, b};
+      root->extra += g->extra;
     } while (b != last);
     return root;
   };
   auto *g = lift();
   if (!g)
     return P{};
-  if (!g->sibling) {
+  if (!g->child) {
     auto *root = new G{first, last};
     root->child = g;
     return P{root, delete_group};
   }
 
   auto prefix = [&z, &state](auto &&a) { return z(a, state.mask); };
-  auto complete = [&prefix, &state](auto *g) {
+  auto layer = [&prefix, &state](auto *g) {
     assert(g && !g->sibling);
     auto *l = g->child;
     if (!l)
-      return;
-    auto a = prefix(*l->first);
-    auto same = true;
-    for (auto *m = l->sibling; m;) {
+      return g;
+    I first = l->first, last = l->last;
+    I great_first = first;
+    E extra{first, last}, great_extra{extra};
+    auto *const first_child = g;
+    auto a = prefix(*first);
+    auto same = true, runoff = true;
+    for (auto *m = l->sibling; m; m = m->sibling) {
       if (auto b = prefix(*m->first); a != b) {
-        if (l->sibling == m) {
-          l->sibling = m->sibling;
-          m->sibling = {};
-          g = g->sibling = m;
-          m = l->sibling;
-        } else {
-          assert(!g->sibling);
-          g = g->sibling = new G{l, m};
-          l = m;
-          m = l->sibling;
-        }
-        a = b;
-      } else {
-        same = false;
-        m = m->sibling;
+        auto *h = new G{m->first, m->last};
+        g->last = last, g->extra = extra, g->sibling = h;
+        g = h;
+        first = m->first, last = m->last, extra = h->extra;
+        great_extra += extra;
+        l->sibling = {}, h->child = m;
+        l = m, a = b, runoff = false;
+        continue;
       }
+      last = m->last;
+      great_extra += extra;
+      extra += {m->first, m->last};
+      same = false, runoff = true;
+    }
+    if (runoff) {
+      auto *h = new G{first, last, extra};
+      h->child = l;
+      g->sibling = h;
     }
     if (same)
-      return state.halt();
-    assert(!g->sibling);
-    g->sibling = new G{l, {}};
-    return;
+      state.halt();
+    auto *great = new G{great_first, last, great_extra};
+    great->child = first_child;
+    return great;
   };
 
-  auto *root = new G{*g};
-  root->clear_relationships();
-  root->child = g;
-  while (state.mask) {
-    state.shift(), complete(root);
-    auto *j = root;
-    root = new G{*root};
-    root->clear_relationships();
-    root->child = j;
-  }
+  while (state.mask)
+    g = (state.shift(), layer(g));
 
-  return P{root, delete_group};
+  return P{g, delete_group};
 }
 
 } // namespace detail
