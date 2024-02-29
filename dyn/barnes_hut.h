@@ -169,7 +169,6 @@ auto tree(I const first, I const last, auto &&z) noexcept {
     do {
       // Still, a and b are one particle apart.
       ++a, ++b;
-      // g, h, and i are groups with the same level of detail.
       h = h->sibling = new G{a, b};
     } while (b != last);
     return g;
@@ -178,7 +177,7 @@ auto tree(I const first, I const last, auto &&z) noexcept {
   if (!g)
     return P{};
   if (!g->sibling) {
-    auto root = new G{last, last};
+    auto *root = new G{first, last};
     root->child = g;
     return P{root, delete_group};
   }
@@ -194,14 +193,12 @@ auto tree(I const first, I const last, auto &&z) noexcept {
     auto a = prefix(*l->first);
     for (auto *m = l->sibling; m; m = m->sibling) {
       if (auto b = prefix(*m->first); a != b) {
-        auto *h = new Group{l, m};
-        g->sibling = h;
-        g = h, l = m, a = b;
-        same = false;
+        g = g->sibling = new G{l, m};
+        l = m, a = b, same = false;
       }
     }
-    auto *h = new Group{l, {}};
-    g->sibling = h;
+    assert(!g->sibling);
+    g->sibling = new G{l, {}};
     return same;
   };
 
