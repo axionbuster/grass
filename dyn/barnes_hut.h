@@ -93,7 +93,6 @@ private:
   Group(Group const &g) : first{g.first}, last{g.last}, extra{g.extra} {}
   Group(I first, I last) : first{first}, last{last}, extra{first, last} {}
   Group(Group *a, Group *b) : first{a->first}, last{b->last} {
-    child = a;
     extra = a->extra;
     for (Group *c = a->sibling; c && c != b; c = c->sibling)
       extra += c->extra;
@@ -172,8 +171,7 @@ template <class E, class I> auto tree(I const first, I const last, auto &&z) {
     // Still, a and b are one particle apart.
     ++a, ++b;
     // g, h, and i are groups with the same level of detail.
-    h->sibling = new G{a, b};
-    h = h->sibling;
+    h = h->sibling = new G{a, b};
   } while (b != last);
 
   // Let's move out (lower level of detail).
@@ -184,6 +182,7 @@ template <class E, class I> auto tree(I const first, I const last, auto &&z) {
   h->child = g;
   state.shift();
   while (state.mask) {
+    auto *const x = h;
     auto prefix = [&z, &state](auto &&a) { return z(a, state.mask); };
     auto c = prefix(*g->first);
     // same: Built exactly the same layer?
@@ -194,17 +193,20 @@ template <class E, class I> auto tree(I const first, I const last, auto &&z) {
       auto d = prefix(*i->first);
       if (c != d) {
         h = h->sibling = new G{g, i};
+        h->child = g;
         g = i;
         c = d;
+      } else {
         same = false;
       }
     }
 
+    h = h->sibling = new G{g, i};
+
     // If built exactly the same layer then just use the old layer.
-    g = h;
     if (same) {
-      auto *j = std::exchange(g->child, {});
-      delete_group(g);
+      auto *j = std::exchange(x->child, {});
+      delete_group(x);
       g = j;
     }
 
