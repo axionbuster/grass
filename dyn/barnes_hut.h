@@ -163,7 +163,8 @@ auto tree(I const first, I const last, auto &&z) noexcept {
     if (first == last)
       // Degeneracy 0 (no particles).
       return {};
-    // Let a and b be iterators to the particles exactly one particle apart.
+    // Let a and b be iterators to the particles exactly one particle apart
+    // (single-particle range).
     I b = first, a = b++;
     auto *const g = new G{a, b};
     if (b == last)
@@ -171,13 +172,13 @@ auto tree(I const first, I const last, auto &&z) noexcept {
       return g;
     // Ordinary case (two+ particles).
     // Let g and h be pointers to groups.
-    auto *h = g;
+    auto *root = new G{a, b}; // (minimize work).
+    root->child = g;
     do {
-      // Still, a and b are one particle apart.
       ++a, ++b;
-      h = h->sibling = new G{a, b};
+      g = g->sibling = new G{a, b};
     } while (b != last);
-    return g;
+    return root;
   };
   auto *g = lift();
   if (!g)
