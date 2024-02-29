@@ -92,31 +92,18 @@ public:
 private:
   Group(Group const &g) : first{g.first}, last{g.last}, extra{g.extra} {}
   Group(I first, I last) : first{first}, last{last}, extra{first, last} {}
-  Group(Group *a, Group *b) : first{a->first}, last{b->last} {
+  Group(Group *a, Group *b) : first{a->first} {
     extra = a->extra;
     for (Group *c = a->sibling; c && c != b; c = c->sibling)
-      extra += c->extra;
+      extra += c->extra, last = c->last;
   }
-  Group(Group &&g) noexcept
-      : first{std::move(g.first)}, last{std::move(g.last)},
-        extra{std::move(g.extra)} {}
-  Group &operator=(Group const &g) {
-    if (this != &g)
-      first = g.first, last = g.last, extra = g.extra;
-    return *this;
-  }
-  Group &operator=(Group &&g) noexcept {
-    if (this != &g) {
-      first = std::move(g.first), last = std::move(g.last),
-      extra = std::move(g.extra);
-    }
-    return *this;
-  }
+  void clear_relationships() { child = {}, sibling = {}; };
 
   static void depth_first_delete(Group *g) {
     if (!g)
       return;
     std::stack<Group *> v;
+    v.push(g);
     while (!v.empty()) {
       auto h = v.top();
       v.pop();
@@ -130,6 +117,7 @@ private:
     if (!g)
       return;
     std::stack<Group const *> v;
+    v.push(g);
     while (!v.empty()) {
       auto h = v.top();
       v.pop();
@@ -155,71 +143,85 @@ template <class E, class I> auto tree(I const first, I const last, auto &&z) {
   using P = std::shared_ptr<G>;
 
   // Turn every particle into a group.
-  if (first == last)
-    // Degeneracy 0 (no particles).
+  // Return the first sibling (g).
+  auto lift = [first, last]() -> G * {
+    if (first == last)
+      // Degeneracy 0 (no particles).
+      return {};
+    // Let a and b be iterators to the particles exactly one particle apart.
+    I b = first, a = b++;
+    auto *g = new G{a, b};
+    if (b == last)
+      // Degeneracy 1 (one particle).
+      return g;
+    // Ordinary case (two+ particles).
+    // Let g and h be pointers to groups.
+    auto *h = g;
+    do {
+      // Still, a and b are one particle apart.
+      ++a, ++b;
+      // g, h, and i are groups with the same level of detail.
+      h = h->sibling = new G{a, b};
+    } while (b != last);
+    return g;
+  };
+  auto *g = lift();
+  if (!g)
     return P{};
-  // Let a and b be iterators to the particles exactly one particle apart.
-  I b = first, a = b++;
-  auto *g = new G{a, b};
-  if (b == last)
-    // Degeneracy 1 (one particle).
-    return P{g, delete_group};
-  // Ordinary case (two+ particles).
-  // Let g and h be pointers to groups.
-  auto *h = g;
-  do {
-    // Still, a and b are one particle apart.
-    ++a, ++b;
-    // g, h, and i are groups with the same level of detail.
-    h = h->sibling = new G{a, b};
-  } while (b != last);
+  if (!g->sibling) {
+    auto root = new G{last, last};
+    root->child = g;
+    return P{root, delete_group};
+  }
 
-  // Let's move out (lower level of detail).
-  // Merge groups with the same Morton code (Z-code) prefixes.
+  auto constexpr SAME = true;
 
-  // h has (will have) a lower level of detail than g.
-  h = new G{*g};
-  h->child = g;
-  state.shift();
-  while (state.mask) {
-    auto *const x = h;
-    auto prefix = [&z, &state](auto &&a) { return z(a, state.mask); };
-    auto c = prefix(*g->first);
-    // same: Built exactly the same layer?
-    auto same = true;
-    for (auto *i = g->sibling; i; i = i->sibling) {
-      // g (unchanging in this loop) and i have the same level of detail.
-      // h has a lower level of detail than both.
-      auto d = prefix(*i->first);
-      if (c != d) {
-        h = h->sibling = new G{g, i};
-        h->child = g;
-        g = i;
-        c = d;
-      } else {
+  auto prefix = [&z, &state](auto &&a) { return z(a, state.mask); };
+  auto complete = [&state, &prefix](auto *const g) {
+    auto same = SAME;
+    G *prev = {}, *l = g->child;
+    if (!l)
+      return same;
+    auto a = prefix(*l->first);
+    for (auto *m = l->sibling; m; m = m->sibling) {
+      if (auto b = prefix(*m->first); a != b) {
+        auto *h = new Group{l, m};
+        if (prev) {
+          assert(!prev->sibling);
+          prev->sibling = h;
+        }
+        prev = h;
+        l = m;
+        a = b;
         same = false;
       }
     }
-
-    h = h->sibling = new G{g, i};
-
-    // If built exactly the same layer then just use the old layer.
-    if (same) {
-      auto *j = std::exchange(x->child, {});
-      delete_group(x);
-      g = j;
+    auto *h = new Group{l, {}};
+    if (prev) {
+      assert(!prev->sibling);
+      prev->sibling = h;
     }
+    return same;
+  };
 
-    // Build new layer.
-    h = new G{*g};
-    h->child = g;
-    state.shift();
+  auto *root_above = new G{*g};
+  root_above->clear_relationships();
+  root_above->child = g;
+  while (state.mask) {
+    if (state.shift(), complete(root_above) == SAME) {
+      // Re-use underlying layer.
+      auto *h = std::exchange(root_above->child, {});
+      delete_group(std::exchange(root_above, h));
+    }
+    auto *j = std::exchange(root_above, new G{*root_above});
+    root_above->clear_relationships();
+    root_above->child = j;
   }
 
   // Mark special (empty range) -> root.
-  h->first = h->last;
-  assert(!h->sibling);
-  return P{h, delete_group};
+  root_above->first = root_above->last;
+  assert(!root_above->sibling);
+  return P{root_above, delete_group};
 }
 
 void run(auto const *group, auto &&f) {
