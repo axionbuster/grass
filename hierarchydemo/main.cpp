@@ -86,7 +86,7 @@ struct Physicals {
 /// Store particles
 struct State : public std::vector<Particle> {
   /// Construct a few particles.
-  State(int N = 2) {
+  State(int N = 5) {
     std::mt19937 r(std::random_device{}());
     std::normal_distribution<float> z;
     for (auto i = 0; i < N; i++)

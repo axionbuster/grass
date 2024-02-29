@@ -201,12 +201,20 @@ auto tree(I const first, I const last, auto &&z) noexcept {
     auto same = true, runoff = true;
     for (auto *m = l->sibling; m; m = m->sibling) {
       if (auto b = prefix(*m->first); a != b) {
-        auto *h = new G{m->first, m->last};
+        G *h;
+        if (auto p = m->first; ++p == m->last) {
+          // Single-particle case. Don't allocate; reuse.
+          h = m;
+        } else {
+          // Multi-particle case.
+          h = new G{m->first, m->last};
+          h->child = m;
+        }
         g->last = last, g->extra = extra, g->sibling = h;
         g = h;
         first = m->first, last = m->last, extra = h->extra;
         great_extra += extra;
-        l->sibling = {}, h->child = m;
+        l->sibling = {};
         l = m, a = b, runoff = false;
         continue;
       }
