@@ -210,11 +210,12 @@ auto tree(I const first, I const last, auto &&z) noexcept {
           h = new G{m->first, m->last};
           h->child = m;
         }
+        first = m->first, last = m->last, extra = h->extra;
         g->last = last, g->extra = extra, g->sibling = h;
         g = h;
-        first = m->first, last = m->last, extra = h->extra;
         great_extra += extra;
-        l->sibling = {};
+        if (h != m)
+          l->sibling = {};
         l = m, a = b, runoff = false;
         continue;
       }
@@ -228,8 +229,12 @@ auto tree(I const first, I const last, auto &&z) noexcept {
       h->child = l;
       g->sibling = h;
     }
-    if (same)
-      state.halt();
+    if (same) {
+      // Replace g(0) [= first_child] with l(0), its child.
+      auto *h = first_child->child;
+      delete first_child;
+      return h;
+    }
     auto *great = new G{great_first, last, great_extra};
     great->child = first_child;
     return great;
@@ -237,6 +242,13 @@ auto tree(I const first, I const last, auto &&z) noexcept {
 
   while (state.mask)
     g = (state.shift(), layer(g));
+
+  if (!g->child) {
+    auto *h = new G{*g};
+    h->clear_relationships();
+    h->child = g;
+    g = h;
+  }
 
   return P{g, delete_group};
 }
