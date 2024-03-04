@@ -7,5 +7,6 @@
 /cmake-build-*
 /tests/Testing/Temporary/*
 /.idea
-/build/
-/Testing/
+/build
+/Testing
+.cache
