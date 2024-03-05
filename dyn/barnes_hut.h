@@ -74,12 +74,11 @@ std::optional<uint64_t> morton(std::complex<float> xy) {
 namespace detail {
 
 template <class, class I> auto tree(I, I, auto &&) noexcept;
-void run(auto &&, auto &&);
 struct DeleteGroup;
 
+/// A group of particles.
 template <class I, class E> class Group {
   template <class, class J> friend auto tree(J, J, auto &&) noexcept;
-  friend void run(auto &&, auto &&);
   friend struct DeleteGroup;
 
   /// First and last particles, respectively.
@@ -98,14 +97,11 @@ private:
   Group(I const first, I const last) noexcept
       : first{first}, last{last}, extra{first, last} {}
 
-  static void depth_first_delete(Group *const g) noexcept {
-    if (!g)
-      return;
+  void depth_first_delete() noexcept {
     std::stack<Group *> v;
-    v.push(g);
+    v.push(this);
     while (!v.empty()) {
       auto h = v.top();
-      assert(h);
       v.pop();
       for (auto a = h->child; a; a = a->sibling)
         v.push(a);
@@ -113,13 +109,12 @@ private:
     }
   }
 
+public:
   /// Apply depth-first traversal. If `deeper` suggests going deeper (true),
   /// go deeper.
-  static void depth_first(Group const *g, auto &&deeper) {
-    if (!g)
-      return;
+  void depth_first(auto &&deeper) {
     std::stack<Group const *> v;
-    v.push(g);
+    v.push(this);
     while (!v.empty()) {
       auto h = v.top();
       v.pop();
@@ -130,13 +125,9 @@ private:
   }
 };
 
-void run(auto &&group, auto &&deeper) {
-  std::remove_reference_t<decltype(*group)>::depth_first(&*group, deeper);
-}
-
 struct DeleteGroup {
   template <class G> void operator()(G *const g) const noexcept {
-    G::depth_first_delete(g);
+    g->depth_first_delete();
   }
 };
 
@@ -260,7 +251,6 @@ auto tree(I const first, I const last, auto &&z) noexcept {
 
 } // namespace detail
 
-using detail::run;
 using detail::tree;
 
 } // namespace dyn::bh32

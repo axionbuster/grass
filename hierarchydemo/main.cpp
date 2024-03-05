@@ -155,29 +155,29 @@ static int do_main() {
       // Used for signaling in the Barnes-Hut iteration.
       // Contract (boolean-convertible) is due to the free function
       // `dyn::bh32::run`.
-      enum { ERASE = 0, KEEP = 1 };
+      enum { IGNORE = 0, DEEPER = 1 };
 
       // For each "group" (bunch of particles considered to have the same
       // level of detail), do whatever is desired, and then decide whether the
-      // particles in the group should be considered at the next round (KEEP),
-      // or if all the particles could be discarded (REMOVE).
-      auto process = [&user, w_mouse, tan_angle_threshold,
-                      max_view_distance](auto &&g) {
+      // particles in the group should be considered at the next round (DEEPER),
+      // or if all the particles could be discarded (IGNORE).
+      auto deeper = [&user, w_mouse, tan_angle_threshold,
+                     max_view_distance](auto &&g) {
         auto dist = std::abs(g.xy - w_mouse);
         if (max_view_distance < dist - g.radius)
           // Too far from the boundary of the group's circle.
-          return ERASE;
+          return IGNORE;
         auto square = [](auto x) { return x * x; };
         auto dim = 1.0f - square(dist / max_view_distance); // [0, 1] closed.
         if (g.single())
           // This group (g) wraps a single particle.
           // Process and then forget.
-          return user.dot(g.xy, Fade(WHITE, dim)), ERASE;
+          return user.dot(g.xy, Fade(WHITE, dim)), IGNORE;
         // Test the distance and the (approximate) viewing angle.
         if (dist < g.radius)
           // This group (g)'s circle contains the given point (w_mouse).
           // Higher level of detail required.
-          return KEEP;
+          return DEEPER;
         // Construct a radius perpendicular to the line of sight from the
         // given point (w_mouse) from the center of the group's circle, and
         // then measure the angle between the ray from w_mouse to the radial
@@ -186,12 +186,12 @@ static int do_main() {
         // angle.
         if (auto tan = g.radius / dist; tan_angle_threshold < tan)
           // View angle too wide; higher detail required.
-          return KEEP;
+          return DEEPER;
         // View angle is small enough. Treat g as a point particle. Draw the
         // circle that represents g for visualization.
         DrawCircleLinesV({g.xy.real(), g.xy.imag()}, g.radius,
                          Fade(YELLOW, dim));
-        return ERASE;
+        return IGNORE;
       };
 
       namespace bh = dyn::bh32;
@@ -203,8 +203,10 @@ static int do_main() {
         else
           return {};
       };
+      // Generate a tree spanning all the particles.
       auto tree = bh::tree<Physicals>(state.begin(), state.end(), morton);
-      bh::run(tree, process);
+      // Run it.
+      tree->depth_first(deeper);
     }
     EndMode2D();
 
