@@ -97,7 +97,7 @@ private:
     if (!g)
       return;
     size_t debug_count{};
-    std::stack<Group *> v;
+    std::stack<Group *const> v;
     v.push(g);
     while (!v.empty()) {
       debug_count++;
@@ -189,7 +189,7 @@ auto tree(I const first, I const last, auto &&z) noexcept {
       G *group0, *group1;
 
     public:
-      explicit B(G *const g) : first{g->first}, group0{g}, group1{g} {}
+      B(G *const g) : first{g->first}, group0{g}, group1{g} {}
 
       /// Admit a group.
       void admit(G *const g) { group1 = g; }
@@ -202,6 +202,7 @@ auto tree(I const first, I const last, auto &&z) noexcept {
           return group1;
         // Many groups.
         auto h = new G{first, group1->last};
+        group1->sibling = {};
         h->child = group0;
         return h;
       }
