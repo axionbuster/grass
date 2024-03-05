@@ -189,7 +189,7 @@ auto tree(I const first, I const last, auto &&z) noexcept {
       G *group0, *group1;
 
     public:
-      B(G *const g) : first{g->first}, group0{g}, group1{g} {}
+      explicit B(G *const g) : first{g->first}, group0{g}, group1{g} {}
 
       /// Admit a group.
       void admit(G *const g) { group1 = g; }
@@ -220,7 +220,7 @@ auto tree(I const first, I const last, auto &&z) noexcept {
         // New prefix.
         q2.push_back(parent.make());
         // Update future new group.
-        parent = {g};
+        parent = B{g};
         // This new group will have this prefix.
         zf = zg;
       }
