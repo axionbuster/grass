@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <queue>
 #include <stack>
 
 namespace dyn::bh32 {
@@ -93,7 +94,6 @@ private:
       : first{first}, last{last}, extra{first, last} {}
   Group(I const first, I const last, E const extra)
       : first{first}, last{last}, extra{extra} {}
-  void clear_relationships() { child = {}, sibling = {}; };
 
   static void depth_first_delete(Group *const g) {
     if (!g)
@@ -148,109 +148,88 @@ template <class E, class I>
 auto tree(I const first, I const last, auto &&z) noexcept {
   struct {
     uint64_t mask = ~uint64_t{};
+    [[nodiscard]] explicit operator bool() const { return mask; }
     void shift() { mask <<= 2; }
-    void halt() { mask = {}; }
   } state;
   using G = Group<I, E>;
   using P = std::shared_ptr<G>;
 
-  // Turn every particle into a group.
-  auto lift = [first, last]() -> G * {
-    if (first == last)
-      // Degeneracy 0 (no particles).
-      return {};
-    // Let a and b be iterators to the particles exactly one particle apart
-    // (single-particle range).
-    I b = first, a = b++;
-    auto *g = new G{a, b};
-    if (b == last)
-      // Degeneracy 1 (one particle).
-      return g;
-    // Ordinary case (two+ particles).
-    // Let g and h be pointers to groups.
-    auto *root = new G{a, b}; // (minimize work).
-    root->last = last;
-    root->child = g;
-    do {
-      ++a, ++b;
-      g = g->sibling = new G{a, b};
-      root->extra += g->extra;
-    } while (b != last);
-    return root;
-  };
-  auto *g = lift();
-  if (!g)
+  // Check for degeneracies (0 or 1 particle cases)
+  if (first == last)
     return P{};
-  if (!g->child) {
-    auto *root = new G{first, last};
-    root->child = g;
-    return P{root, delete_group};
-  }
+  else if (auto f = first; ++f == last)
+    return P{new G{first, last}, delete_group};
 
-  auto prefix = [&z, &state](auto &&a) { return z(a, state.mask); };
-  auto layer = [&prefix, &state](auto *g) {
-    assert(g && !g->sibling);
-    auto *l = g->child;
-    if (!l)
-      return g;
-    I first = l->first, last = l->last;
-    I great_first = first;
-    E extra{first, last}, great_extra{extra};
-    auto *const first_child = g;
-    auto a = prefix(*first);
-    auto same = true, runoff = true;
-    for (auto *m = l->sibling; m; m = m->sibling) {
-      if (auto b = prefix(*m->first); a != b) {
-        G *h;
-        if (auto p = m->first; ++p == m->last) {
-          // Single-particle case. Don't allocate; reuse.
-          h = m;
-        } else {
-          // Multi-particle case.
-          h = new G{m->first, m->last};
-          h->child = m;
-        }
-        first = m->first, last = m->last, extra = h->extra;
-        g->last = last, g->extra = extra, g->sibling = h;
-        g = h;
-        great_extra += extra;
-        if (h != m)
-          l->sibling = {};
-        l = m, a = b, runoff = false;
-        continue;
+  // Two or more particles.
+
+  auto q = std::deque<G *>{};
+
+  // First, turn every particle into a group.
+  for (auto f = first; f != last; ++f) {
+    auto g = f;
+    ++g, q.push_back(new G{f, g});
+  }
+  state.shift();
+
+  // Now, iteratively create a new layer.
+
+  // Find the Z-code with the lowest few bits zeroed out.
+  auto prefix = [&state, &z](auto &&p) { return z(p, state.mask); };
+
+  // Find the Z-code of the first particle of a group.
+  auto gprefix = [&prefix](auto &&g) { return prefix(*g.first); };
+
+  while (state) {
+    decltype(q) q2{};
+    auto top = q.front();
+    q.pop_front();
+    auto countm1 = 0;
+    auto f = top->first;
+    auto zf = prefix(*f);
+    auto last_group = top;
+    auto put = [&q2, &countm1, &f, &last_group]() {
+      if (countm1) {
+        auto h = new G{f, last_group->last};
+        h->child = last_group;
+        q2.push_back(h);
+      } else {
+        q2.push_back(last_group);
       }
-      last = m->last;
-      great_extra += extra;
-      extra += {m->first, m->last};
-      same = false, runoff = true;
+    };
+    for (auto &&g : q) {
+      auto zg = gprefix(*g);
+      if (zf != zg) {
+        // Put new group upon new prefix.
+        put();
+        // Update future new group.
+        f = g->first;
+        zf = zg;
+        countm1 = 0;
+      } else {
+        ++countm1;
+      }
+      last_group = g;
     }
-    if (runoff) {
-      auto *h = new G{first, last, extra};
-      h->child = l;
-      g->sibling = h;
-    }
-    if (same) {
-      // Replace g(0) [= first_child] with l(0), its child.
-      auto *h = first_child->child;
-      delete first_child;
-      return h;
-    }
-    auto *great = new G{great_first, last, great_extra};
-    great->child = first_child;
-    return great;
-  };
-
-  while (state.mask)
-    g = (state.shift(), layer(g));
-
-  if (!g->child) {
-    auto *h = new G{*g};
-    h->clear_relationships();
-    h->child = g;
-    g = h;
+    // Unconditional runoff
+    put();
+    // Create or override siblings relationships in new layer (q2).
+    assert(q2.size());
+    for (typename decltype(q2)::size_type i = 0; i < q2.size() - 1; i++)
+      q2[i]->sibling = q2[i + 1];
+    // Recognize lower level as children.
+    if (q2.front() != top)
+      q2.front()->child = top;
+    // Swap around.
+    std::swap(q, q2);
+    // Next level or stop.
+    state.shift();
   }
 
-  return P{g, delete_group};
+  // Create and then set up root node. Return it.
+  assert(q.size());
+  auto root = new G{first, last};
+  root->child = q.front();
+  return P{root, delete_group};
 }
 
 } // namespace detail
