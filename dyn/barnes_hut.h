@@ -117,17 +117,15 @@ private:
   static void depth_first(Group const *g, auto &&deeper) {
     if (!g)
       return;
-    size_t debug_count{};
     std::stack<Group const *> v;
     v.push(g);
     while (!v.empty()) {
       auto h = v.top();
       v.pop();
-      for (auto i = h->child; i; i = i->sibling)
-        if (++debug_count, deeper(i->extra))
-          v.push(i);
+      if (deeper(h->extra))
+        for (auto a = h->child; a; a = a->sibling)
+          v.push(a);
     }
-    (void)debug_count;
   }
 };
 

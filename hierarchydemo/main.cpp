@@ -86,7 +86,7 @@ struct Physicals {
 /// Store particles
 struct State : public std::vector<Particle> {
   /// Construct a few particles.
-  State(int N = 4) {
+  State(int N = 400) {
     std::mt19937 r(std::random_device{}());
     std::normal_distribution<float> z;
     for (auto i = 0; i < N; i++)
@@ -155,7 +155,7 @@ static int do_main() {
       // Used for signaling in the Barnes-Hut iteration.
       // Contract (boolean-convertible) is due to the free function
       // `dyn::bh32::run`.
-      enum { KEEP = 0, ERASE = 1 };
+      enum { ERASE = 0, KEEP = 1 };
 
       // For each "group" (bunch of particles considered to have the same
       // level of detail), do whatever is desired, and then decide whether the
