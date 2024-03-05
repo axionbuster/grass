@@ -189,7 +189,7 @@ auto tree(I const first, I const last, auto &&z) noexcept {
       G *group0, *group1;
 
     public:
-      B(I const f, G *const g) : first{f}, group0{g}, group1{g} {}
+      explicit B(G *const g) : first{g->first}, group0{g}, group1{g} {}
 
       /// Admit a group.
       void admit(G *const g) { group1 = g; }
@@ -208,7 +208,7 @@ auto tree(I const first, I const last, auto &&z) noexcept {
 
       /// Get the first particle.
       [[nodiscard]] I get_first() const { return first; }
-    } parent{top->first, top};
+    } parent{top};
     auto zf = prefix(*parent.get_first());
     for (auto &&g : q) {
       auto zg = prefix(*g->first);
@@ -219,7 +219,7 @@ auto tree(I const first, I const last, auto &&z) noexcept {
         // New prefix.
         q2.push_back(parent.make());
         // Update future new group.
-        parent = {g->first, g};
+        parent = {g};
         // This new group will have this prefix.
         zf = zg;
       }
