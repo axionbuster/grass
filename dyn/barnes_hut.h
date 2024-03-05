@@ -213,10 +213,10 @@ auto tree(I const first, I const last, auto &&z) noexcept {
     for (auto &&g : q) {
       auto zg = prefix(*g->first);
       if (zf == zg) {
-        // Same group. Merely update.
+        // Same prefix.
         parent.admit(g);
       } else {
-        // New group (new prefix).
+        // New prefix.
         q2.push_back(parent.make());
         // Update future new group.
         parent = {g->first, g};
