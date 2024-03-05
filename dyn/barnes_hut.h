@@ -92,8 +92,6 @@ public:
 private:
   Group(I const first, I const last)
       : first{first}, last{last}, extra{first, last} {}
-  Group(I const first, I const last, E const extra)
-      : first{first}, last{last}, extra{extra} {}
 
   static void depth_first_delete(Group *const g) {
     if (!g)
@@ -148,7 +146,6 @@ template <class E, class I>
 auto tree(I const first, I const last, auto &&z) noexcept {
   struct {
     uint64_t mask = ~uint64_t{};
-    [[nodiscard]] explicit operator bool() const { return mask; }
     void shift() { mask <<= 2; }
   } state;
   using G = Group<I, E>;
@@ -161,8 +158,9 @@ auto tree(I const first, I const last, auto &&z) noexcept {
     return P{new G{first, last}, delete_group};
 
   // Two or more particles.
+  // Make layers.
 
-  auto q = std::deque<G *>{};
+  auto q = std::deque<G *const>{};
 
   // First, turn every particle into a group.
   for (auto f = first; f != last; ++f) {
@@ -171,12 +169,12 @@ auto tree(I const first, I const last, auto &&z) noexcept {
   }
   state.shift();
 
-  // Now, make layers.
+  // Now, actually make the layers.
 
   // Find the Z-code with the lowest few bits zeroed out.
   auto prefix = [&state, &z](auto &&p) { return z(p, state.mask); };
 
-  while (state) {
+  while (state.mask) {
     decltype(q) q2{};
     // Scan the queue (q) and then bring every subarray of groups with the same
     // Z-prefix under a common parent.
@@ -187,14 +185,11 @@ auto tree(I const first, I const last, auto &&z) noexcept {
       /// First particle.
       I first;
 
-      /// Earliest group.
-      G *group0;
-
-      /// Latest group.
-      G *group1;
+      /// Earliest and latest groups, respectively.
+      G *group0, *group1;
 
     public:
-      B(I f, G *g) : first{f}, group0{g}, group1{g} {}
+      B(I const f, G *const g) : first{f}, group0{g}, group1{g} {}
 
       /// Admit a group.
       void admit(G *const g) { group1 = g; }
@@ -202,16 +197,16 @@ auto tree(I const first, I const last, auto &&z) noexcept {
       /// Create a common parent group to all the included groups.
       [[nodiscard]] G *make() const {
         // Test: many groups or one group?
-        if (group0 == group1) {
+        if (group0 == group1)
           // One group. Don't allocate; reuse.
           return group1;
-        }
         // Many groups.
         auto h = new G{first, group1->last};
         h->child = group0;
         return h;
       }
 
+      /// Get the first particle.
       [[nodiscard]] I get_first() const { return first; }
     } build{top->first, top};
     auto zf = prefix(*build.get_first());
@@ -238,9 +233,8 @@ auto tree(I const first, I const last, auto &&z) noexcept {
     // Recognize lower level as children.
     if (q2.front() != top)
       q2.front()->child = top;
-    // Swap around.
-    std::swap(q, q2);
     // Next level or stop.
+    std::swap(q, q2);
     state.shift();
   }
 
