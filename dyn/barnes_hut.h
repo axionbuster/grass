@@ -171,47 +171,66 @@ auto tree(I const first, I const last, auto &&z) noexcept {
   }
   state.shift();
 
-  // Now, iteratively create a new layer.
+  // Now, make layers.
 
   // Find the Z-code with the lowest few bits zeroed out.
   auto prefix = [&state, &z](auto &&p) { return z(p, state.mask); };
 
-  // Find the Z-code of the first particle of a group.
-  auto gprefix = [&prefix](auto &&g) { return prefix(*g.first); };
-
   while (state) {
     decltype(q) q2{};
+    // Scan the queue (q) and then bring every subarray of groups with the same
+    // Z-prefix under a common parent.
+    assert(q.size());
     auto top = q.front();
     q.pop_front();
-    auto countm1 = 0;
-    auto f = top->first;
-    auto zf = prefix(*f);
-    auto last_group = top;
-    auto put = [&q2, &countm1, &f, &last_group]() {
-      if (countm1) {
-        auto h = new G{f, last_group->last};
-        h->child = last_group;
-        q2.push_back(h);
-      } else {
-        q2.push_back(last_group);
+    class B {
+      /// First particle.
+      I first;
+
+      /// Earliest group.
+      G *group0;
+
+      /// Latest group.
+      G *group1;
+
+    public:
+      B(I f, G *g) : first{f}, group0{g}, group1{g} {}
+
+      /// Admit a group.
+      void admit(G *const g) { group1 = g; }
+
+      /// Create a common parent group to all the included groups.
+      [[nodiscard]] G *make() const {
+        // Test: many groups or one group?
+        if (group0 == group1) {
+          // One group. Don't allocate; reuse.
+          return group1;
+        }
+        // Many groups.
+        auto h = new G{first, group1->last};
+        h->child = group0;
+        return h;
       }
-    };
+
+      [[nodiscard]] I get_first() const { return first; }
+    } build{top->first, top};
+    auto zf = prefix(*build.get_first());
     for (auto &&g : q) {
-      auto zg = gprefix(*g);
-      if (zf != zg) {
-        // Put new group upon new prefix.
-        put();
-        // Update future new group.
-        f = g->first;
-        zf = zg;
-        countm1 = 0;
+      auto zg = prefix(*g->first);
+      if (zf == zg) {
+        // Same group. Merely update.
+        build.admit(g);
       } else {
-        ++countm1;
+        // New group (new prefix).
+        q2.push_back(build.make());
+        // Update future new group.
+        build = {g->first, g};
+        // This new group will have this prefix.
+        zf = zg;
       }
-      last_group = g;
     }
-    // Unconditional runoff
-    put();
+    // Unconditional runoff: Handle it.
+    q2.push_back(build.make());
     // Create or override siblings relationships in new layer (q2).
     assert(q2.size());
     for (typename decltype(q2)::size_type i = 0; i < q2.size() - 1; i++)
