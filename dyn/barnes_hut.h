@@ -208,24 +208,24 @@ auto tree(I const first, I const last, auto &&z) noexcept {
 
       /// Get the first particle.
       [[nodiscard]] I get_first() const { return first; }
-    } build{top->first, top};
-    auto zf = prefix(*build.get_first());
+    } parent{top->first, top};
+    auto zf = prefix(*parent.get_first());
     for (auto &&g : q) {
       auto zg = prefix(*g->first);
       if (zf == zg) {
         // Same group. Merely update.
-        build.admit(g);
+        parent.admit(g);
       } else {
         // New group (new prefix).
-        q2.push_back(build.make());
+        q2.push_back(parent.make());
         // Update future new group.
-        build = {g->first, g};
+        parent = {g->first, g};
         // This new group will have this prefix.
         zf = zg;
       }
     }
     // Unconditional runoff: Handle it.
-    q2.push_back(build.make());
+    q2.push_back(parent.make());
     // Create or override siblings relationships in new layer (q2).
     assert(q2.size());
     for (typename decltype(q2)::size_type i = 0; i < q2.size() - 1; i++)
