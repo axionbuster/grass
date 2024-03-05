@@ -97,7 +97,30 @@ private:
   Group(I const first, I const last) noexcept
       : first{first}, last{last}, extra{first, last} {}
 
+  [[maybe_unused]] [[must_use]] size_t debug_tally_leaves() const noexcept {
+    assert(!this->sibling);
+    std::stack<Group const *> v;
+    v.push(this);
+    size_t tally{};
+    while (!v.empty()) {
+      auto h = v.top();
+      v.pop();
+      if (!h->child)
+        ++tally;
+      // "Existence of a sibling implies existence of a child."
+      assert(!!h->sibling <= !!h->child);
+      for (auto a = h->child; a; a = a->sibling)
+        v.push(a);
+    }
+    return tally;
+  }
+
   void depth_first_delete() noexcept {
+    assert(!this->sibling);
+#ifndef NDEBUG
+    auto debug_tally_ = debug_tally_leaves();
+    assert(debug_tally_ == 75);
+#endif
     std::stack<Group *> v;
     v.push(this);
     while (!v.empty()) {
@@ -113,6 +136,7 @@ public:
   /// Apply depth-first traversal. If `deeper` suggests going deeper (true),
   /// go deeper.
   void depth_first(auto &&deeper) {
+    assert(!this->sibling);
     std::stack<Group const *> v;
     v.push(this);
     while (!v.empty()) {
@@ -230,6 +254,7 @@ auto tree(I const first, I const last, auto &&z) noexcept {
     }
     // Unconditional runoff: Handle it.
     q2.push_back(parent.pop());
+    assert(q2.back()->last == last);
     // Create or override siblings relationships in new layer (q2).
     assert(q2.size());
     for (typename decltype(q2)::size_type i = 0; i < q2.size() - 1; i++)
