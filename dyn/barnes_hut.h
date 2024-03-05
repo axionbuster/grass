@@ -5,6 +5,7 @@
 #include <cassert>
 #include <complex>
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <optional>
 #include <queue>
@@ -97,7 +98,7 @@ private:
     if (!g)
       return;
     size_t debug_count{};
-    std::stack<Group *const> v;
+    std::stack<Group *> v;
     v.push(g);
     while (!v.empty()) {
       debug_count++;
@@ -160,7 +161,7 @@ auto tree(I const first, I const last, auto &&z) noexcept {
   // Two or more particles.
   // Make layers.
 
-  auto q = std::deque<G *const>{};
+  auto q = std::deque<G *>{};
 
   // First, turn every particle into a group.
   for (auto f = first; f != last; ++f) {
