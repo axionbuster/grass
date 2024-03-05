@@ -82,7 +82,11 @@ template <class I, class E> class Group {
   friend void run(auto &&, auto &&);
   friend struct DeleteGroup;
 
+  /// First and last particles, respectively.
   I first, last;
+
+  /// The child and sibling group pointers, if any.
+  /// (Left-child right-sibling tree).
   Group *child{}, *sibling{};
 
 public:
@@ -91,17 +95,15 @@ public:
   ~Group() = default;
 
 private:
-  Group(I const first, I const last)
+  Group(I const first, I const last) noexcept
       : first{first}, last{last}, extra{first, last} {}
 
-  static void depth_first_delete(Group *const g) {
+  static void depth_first_delete(Group *const g) noexcept {
     if (!g)
       return;
-    size_t debug_count{};
     std::stack<Group *> v;
     v.push(g);
     while (!v.empty()) {
-      debug_count++;
       auto h = v.top();
       assert(h);
       v.pop();
@@ -109,7 +111,6 @@ private:
         v.push(a);
       delete h;
     }
-    (void)debug_count;
   }
 
   /// Apply depth-first traversal. If `deeper` suggests going deeper (true),
@@ -134,13 +135,21 @@ void run(auto &&group, auto &&deeper) {
 }
 
 struct DeleteGroup {
-  template <class G> void operator()(G *const g) const {
+  template <class G> void operator()(G *const g) const noexcept {
     G::depth_first_delete(g);
   }
 };
 
+/// Delete a group thoroughly in depth-first order.
+/// Use as a deleter for smart pointers.
 inline DeleteGroup constexpr delete_group;
 
+/// Construct a tree ranging from the particle at `first` and the end delimited
+/// by the past-the-end iterator `last`.
+/// @param z With the syntax `auto z(auto &&particle, uint64_t mask)`, find the
+/// Morton code (Z-code) of the particle with the mask being applied by bitwise
+/// AND.
+/// @returns A pointer to the root node of the tree.
 template <class E, class I>
 auto tree(I const first, I const last, auto &&z) noexcept {
   struct {
@@ -188,44 +197,48 @@ auto tree(I const first, I const last, auto &&z) noexcept {
       G *group0, *group1;
 
     public:
-      explicit B(G *const g) : first{g->first}, group0{g}, group1{g} {}
+      explicit B(G *const g) noexcept : first{g->first}, group0{g}, group1{g} {}
 
       /// Admit a group.
-      void admit(G *const g) { group1 = g; }
+      void merge(G *const g) noexcept { group1 = g; }
 
       /// Create a common parent group to all the included groups.
-      [[nodiscard]] G *make() const {
+      [[nodiscard]] G *pop() const noexcept {
         // Test: many groups or one group?
         if (group0 == group1)
           // One group. Don't allocate; reuse.
           return group1;
         // Many groups.
         auto h = new G{first, group1->last};
+        // Say "no" to aliasing.
         group1->sibling = {};
+        // Admit the first group as the child.
         h->child = group0;
         return h;
       }
 
       /// Get the first particle.
-      [[nodiscard]] I get_first() const { return first; }
+      [[nodiscard]] I get_first() const noexcept { return first; }
     } parent{top};
-    auto zf = prefix(*parent.get_first());
+    // Repeatedly compare the prefixes with the leading parent group to decide
+    // whether to create a new parent group or to merge with the leading group.
+    auto z0 = prefix(*parent.get_first());
     for (auto &&g : q) {
-      auto zg = prefix(*g->first);
-      if (zf == zg) {
+      auto z1 = prefix(*g->first);
+      if (z0 == z1) {
         // Same prefix.
-        parent.admit(g);
+        parent.merge(g);
       } else {
         // New prefix.
-        q2.push_back(parent.make());
+        q2.push_back(parent.pop());
         // Update future new group.
         parent = B{g};
         // This new group will have this prefix.
-        zf = zg;
+        z0 = z1;
       }
     }
     // Unconditional runoff: Handle it.
-    q2.push_back(parent.make());
+    q2.push_back(parent.pop());
     // Create or override siblings relationships in new layer (q2).
     assert(q2.size());
     for (typename decltype(q2)::size_type i = 0; i < q2.size() - 1; i++)
