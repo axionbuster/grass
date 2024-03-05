@@ -72,12 +72,12 @@ std::optional<uint64_t> morton(std::complex<float> xy) {
 namespace detail {
 
 template <class, class I> auto tree(I, I, auto &&) noexcept;
-void run(auto const *, auto &&);
+void run(auto &&, auto &&);
 struct DeleteGroup;
 
 template <class I, class E> class Group {
   template <class, class J> friend auto tree(J, J, auto &&) noexcept;
-  friend void run(auto const *, auto &&);
+  friend void run(auto &&, auto &&);
   friend struct DeleteGroup;
 
   I first, last;
@@ -132,8 +132,8 @@ private:
   }
 };
 
-void run(auto const *const group, auto &&deeper) {
-  std::remove_reference_t<decltype(*group)>::depth_first(group, deeper);
+void run(auto &&group, auto &&deeper) {
+  std::remove_reference_t<decltype(*group)>::depth_first(&*group, deeper);
 }
 
 struct DeleteGroup {

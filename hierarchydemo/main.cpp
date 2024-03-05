@@ -204,7 +204,7 @@ static int do_main() {
           return {};
       };
       auto tree = bh::tree<Physicals>(state.begin(), state.end(), morton);
-      bh::run(&*tree, process);
+      bh::run(tree, process);
     }
     EndMode2D();
 
