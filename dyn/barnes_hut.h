@@ -120,10 +120,6 @@ private:
 
   void depth_first_delete() noexcept {
     assert(!this->sibling);
-#ifndef NDEBUG
-    auto debug_tally_ = debug_tally_leaves();
-    assert(debug_tally_ == 1'000); // Change count as needed.
-#endif
     std::stack<Group *> v;
     v.push(this);
     while (!v.empty()) {

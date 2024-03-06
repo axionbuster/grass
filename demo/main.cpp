@@ -1,16 +1,15 @@
 #include <raylib.h>
 
-#include <algorithm>
 #include <cmath>
 #include <complex>
 #include <sstream>
 #include <vector>
 
-#include <circle.h>
 #include <halton.h>
 
 #include "Table.h"
 #include "irhall.h"
+#include <utility>
 
 using namespace phy;
 

@@ -5,9 +5,12 @@
 #include <barnes_hut.h>
 #include <cassert>
 #include <circle.h>
+#include <complex>
+#include <cstdint>
 #include <kahan.h>
 #include <newton.h>
 #include <optional>
+#include <type_traits>
 #include <vector>
 #include <verlet.h>
 #include <yoshida.h>
@@ -43,17 +46,17 @@ struct Particle {
 /// @brief A type of integrator accepted by Table.
 template <typename I, typename F>
 concept IntegratorType = requires(I i, std::complex<F> c) {
-                           { I{c, c} } -> std::convertible_to<I>;
-                           { i.y0 } -> std::convertible_to<std::complex<F>>;
-                           { i.y1 } -> std::convertible_to<std::complex<F>>;
-                           // Also, with a function f of type std::complex<F> ->
-                           // std::complex<F>, and an F type value h, possible
-                           // to advance internal state with the syntax:
-                           //    i.step(h, f);
-                           // [h ostensibly stands for "step size," F for
-                           // "floating point," and f computes the second
-                           // derivative from the zeroth derivative.]
-                         };
+  { I{c, c} } -> std::convertible_to<I>;
+  { i.y0 } -> std::convertible_to<std::complex<F>>;
+  { i.y1 } -> std::convertible_to<std::complex<F>>;
+  // Also, with a function f of type std::complex<F> ->
+  // std::complex<F>, and an F type value h, possible
+  // to advance internal state with the syntax:
+  //    i.step(h, f);
+  // [h ostensibly stands for "step size," F for
+  // "floating point," and f computes the second
+  // derivative from the zeroth derivative.]
+};
 
 namespace detail {
 
@@ -101,15 +104,13 @@ struct Physicals {
     radius = std::max(radius, p.radius + std::abs(p.xy - xy));
     return *this;
   }
-
-  [[nodiscard]] bool single() const { return count == 1.0f; }
 };
 
 } // namespace detail
 
 /// @brief Store a vector of particles and integrate them using the provided
 /// integrator type.
-template <typename Integrator = dyn::Yoshida<float>>
+template <typename Integrator = dyn::Verlet<float>>
 requires IntegratorType<Integrator, float>
 class Table : public std::vector<Particle> {
   template <typename F = double> using C = std::complex<F>;
@@ -120,7 +121,7 @@ class Table : public std::vector<Particle> {
 public:
   /// @brief Universal gravitational constant [LLL/M/T/T]. Modify freely.
   float G{1.0f};
-  float tan_angle_threshold{0.0874887f}; // tan(5 deg)
+  float tan_angle_threshold{0.12278456f}; // tan(7 deg)
 
   /// @brief Perform an integration step.
   /// @param dt Step size [units: T].
@@ -154,18 +155,15 @@ public:
         dyn::Kahan<std::complex<float>> a;
         enum { IGNORE = 0, DEEPER = 1 };
         auto process = [&](auto &&g) {
-          auto gxy = g.xy;
-          auto gra = g.radius;
-          auto gm = g.mass;
-          auto dist = std::abs(gxy - xy);
-          if (g.single() && gxy == xy)
+          if (g.xy == xy)
             return IGNORE;
-          if (dist < gra)
+          auto dist = std::abs(g.xy - xy);
+          if (dist < g.radius)
             return DEEPER;
-          if (auto tan = gra / dist; tan_angle_threshold < tan)
+          if (auto tan = g.radius / dist; tan_angle_threshold < tan)
             return DEEPER;
-          auto cp = dyn::Circle{xy, p.radius}, cg = dyn::Circle{gxy, gra};
-          a += gr.field(cp, cg, G * gm);
+          auto cp = dyn::Circle{xy, p.radius}, cg = dyn::Circle{g.xy, g.radius};
+          a += gr.field(cp, cg, G * g.mass);
           return IGNORE;
         };
         tree->depth_first(process);
