@@ -1,6 +1,10 @@
 #ifndef GRASS_BARNES_HUT_H
 #define GRASS_BARNES_HUT_H
 
+#ifndef NDEBUG
+#include <vector>
+#endif
+
 #include <array>
 #include <cassert>
 #include <complex>
@@ -97,6 +101,7 @@ private:
   Group(I const first, I const last) noexcept
       : first{first}, last{last}, extra{first, last} {}
 
+#ifndef NDEBUG
   [[maybe_unused]] [[nodiscard]] size_t debug_tally_leaves() const noexcept {
     std::stack<Group const *> v;
     v.push(this);
@@ -111,12 +116,13 @@ private:
     }
     return tally;
   }
+#endif
 
   void depth_first_delete() noexcept {
     assert(!this->sibling);
 #ifndef NDEBUG
-    // auto debug_tally_ = debug_tally_leaves();
-    // assert(debug_tally_ == 1'000);
+    auto debug_tally_ = debug_tally_leaves();
+    assert(debug_tally_ == 1'000); // Change count as needed.
 #endif
     std::stack<Group *> v;
     v.push(this);
@@ -178,8 +184,7 @@ auto tree(I const first, I const last, auto &&z) noexcept {
     return P{new G{first, last}, delete_group};
 
   // Two or more particles.
-  // Make layers.
-
+  // Make layers (q).
   auto q = std::deque<G *>{};
 
   // First, turn every particle into a group.
@@ -187,6 +192,9 @@ auto tree(I const first, I const last, auto &&z) noexcept {
     auto g = f;
     ++g, q.push_back(new G{f, g});
   }
+  // (Don't forget the sibling relationships).
+  for (typename decltype(q)::size_type i = 0; i < q.size() - 1; i++)
+    q[i]->sibling = q[i + 1];
   state.shift();
 
   // Now, actually make the layers.
@@ -194,8 +202,9 @@ auto tree(I const first, I const last, auto &&z) noexcept {
   // Find the Z-code with the lowest few bits zeroed out.
   auto prefix = [&state, &z](auto &&p) { return z(p, state.mask); };
 
+  decltype(q) q2{};
   while (state.mask) {
-    decltype(q) q2{};
+    q2.clear();
     // Scan the queue (q) and then bring every subarray of groups with the same
     // Z-prefix under a common parent.
     assert(q.size());
@@ -221,6 +230,7 @@ auto tree(I const first, I const last, auto &&z) noexcept {
           // One group. Don't allocate; reuse.
           return group1;
         // Many groups.
+        assert(group0->sibling);
         auto h = new G{first, group1->last};
         // Say "no" to aliasing.
         group1->sibling = {};
@@ -251,23 +261,6 @@ auto tree(I const first, I const last, auto &&z) noexcept {
     }
     // Unconditional runoff: Handle it.
     q2.push_back(parent.pop());
-#ifndef NDEBUG
-    {
-      std::deque<size_t> expected_counts, actual_counts;
-      for (auto &&g : q2)
-        // FIXME: `count` is normally inaccessible.
-        expected_counts.push_back(g->extra.count),
-            actual_counts.push_back(g->debug_tally_leaves());
-      struct Difference {
-        size_t i, e, a;
-      };
-      std::deque<Difference> diff;
-      for (size_t i = 0; i < expected_counts.size(); ++i)
-        if (expected_counts[i] != actual_counts[i])
-          diff.push_back({i, expected_counts[i], actual_counts[i]});
-      assert(diff.empty());
-    }
-#endif
     // Create or override siblings relationships in new layer (q2).
     assert(q2.size());
     for (typename decltype(q2)::size_type i = 0; i < q2.size() - 1; i++)
