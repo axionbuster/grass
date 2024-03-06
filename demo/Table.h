@@ -3,11 +3,9 @@
 
 #include <algorithm>
 #include <barnes_hut.h>
-#include <cassert>
 #include <circle.h>
 #include <complex>
 #include <cstdint>
-#include <kahan.h>
 #include <newton.h>
 #include <optional>
 #include <type_traits>
