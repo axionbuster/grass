@@ -46,7 +46,7 @@ struct Physicals {
   /// (Integers in floating points to avoid integer-float conversions).
   float radius{}, count{};
 
-  // Three required member functions (by `dyn::bh32::View::layer`):
+  // Three required member functions (by `dyn::bh32::tree`):
   //  1. No-argument constructor.
   //  2. Constructor given a range of particles.
   //  3. Merger function using (+=).
