@@ -46,17 +46,17 @@ struct Particle {
 /// @brief A type of integrator accepted by Table.
 template <typename I, typename F>
 concept IntegratorType = requires(I i, std::complex<F> c) {
-  { I{c, c} } -> std::convertible_to<I>;
-  { i.y0 } -> std::convertible_to<std::complex<F>>;
-  { i.y1 } -> std::convertible_to<std::complex<F>>;
-  // Also, with a function f of type std::complex<F> ->
-  // std::complex<F>, and an F type value h, possible
-  // to advance internal state with the syntax:
-  //    i.step(h, f);
-  // [h ostensibly stands for "step size," F for
-  // "floating point," and f computes the second
-  // derivative from the zeroth derivative.]
-};
+                           { I{c, c} } -> std::convertible_to<I>;
+                           { i.y0 } -> std::convertible_to<std::complex<F>>;
+                           { i.y1 } -> std::convertible_to<std::complex<F>>;
+                           // Also, with a function f of type std::complex<F> ->
+                           // std::complex<F>, and an F type value h, possible
+                           // to advance internal state with the syntax:
+                           //    i.step(h, f);
+                           // [h ostensibly stands for "step size," F for
+                           // "floating point," and f computes the second
+                           // derivative from the zeroth derivative.]
+                         };
 
 namespace detail {
 
@@ -67,7 +67,7 @@ struct Physicals {
 
   /// Radius and number of particles (integer).
   /// (Integers in floating points to avoid integer-float conversions).
-  float radius{}, count{}, mass{};
+  float radius{}, mass{};
 
   // Three required member functions (by `dyn::bh32::View::layer`):
   //  1. No-argument constructor.
@@ -78,28 +78,27 @@ struct Physicals {
 
   /// Given a range of particles (with an `xy` field), compute the quantities.
   template <class I> Physicals(I first, I last) {
-    auto f = first;
-    while (f != last)
-      // Welford's online average algorithm.
-      xy += (f++->xy - xy) / ++count;
-    for (f = first; f != last; ++f) {
-      radius = std::max(radius, std::abs(f->xy - xy));
-      mass += f->mass;
+    std::complex<double> xyd;
+    for (auto i = first; i != last; ++i) {
+      mass += i->mass;
+      xyd += double(i->mass) * std::complex<double>{i->xy};
     }
+    xy = std::complex<float>{xyd / double(mass)};
+    for (auto i = first; i != last; ++i)
+      radius = std::max(radius, std::abs(i->xy - xy));
   }
 
   /// Merge p's information.
   Physicals &operator+=(Physicals const &p) {
     if (this == &p)
       // Cannot violate const contract.
-      return count += count, *this;
+      return mass += mass, *this;
     // Compute the new average xy.
-    auto sum = count + p.count;
-    auto proportion0 = count / sum;
-    auto proportion1 = p.count / sum;
+    auto sum = mass + p.mass;
+    auto proportion0 = mass / sum;
+    auto proportion1 = p.mass / sum;
     xy = proportion0 * xy + proportion1 * p.xy;
     // The rest.
-    count += p.count;
     mass += p.mass;
     radius = std::max(radius, p.radius + std::abs(p.xy - xy));
     return *this;
