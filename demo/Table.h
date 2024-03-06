@@ -111,6 +111,25 @@ class Table : public std::vector<Particle> {
     }
   };
 
+  /// @brief Given a Barnes-Hut tree and a circle that represents a particle,
+  /// compute the acceleration onto the particle due to the data in the tree.
+  std::complex<float> accelerate(auto &&tree, dyn::Circle<> circle) {
+    std::complex<float> a{};
+    tree->depth_first([this, &a, &circle](auto &&group) {
+      auto const TRUNCATE = false;
+      if (group.xy == circle)
+        return TRUNCATE;
+      auto square = [](auto x) { return x * x; };
+      auto norm = std::norm(group.xy - circle), rsq = square(group.radius);
+      if (norm < rsq || square(tan_angle_threshold) < rsq / norm)
+        return !TRUNCATE;
+      a += gr.field(circle, {group.xy, group.radius}, G * group.mass,
+                    std::sqrt(norm));
+      return TRUNCATE;
+    });
+    return a;
+  }
+
 public:
   /// @brief Universal gravitational constant [LLL/M/T/T]. Modify freely.
   float G{1.0f};
@@ -140,54 +159,14 @@ public:
 
     // Iterate over the particles, summing up their forces.
     for (auto &&p : *this) {
-      // accel:
       // Supposing that particle p is located instead at the position xy below,
       // what is the acceleration experienced by p due to all the other
       // particles or approximations (g)?
-      auto const tan_thr_sq = tan_angle_threshold * tan_angle_threshold;
-      auto const G_ = this->G;
-      auto &&gr_ = this->gr;
-      auto accel = [tan_thr_sq, &gr_, G_, &p, &tree](auto xy) {
-        std::complex<float> a;
-        // These bool-coercing constants are due to
-        // `dyn::bh32::Group<,>::depth_first`.
-        enum { IGNORE = 0, DEEPER = 1 };
-        // Look at the group (g) of particles.
-        // Compute the acceleration and then exit the branch if far enough.
-        // Otherwise, go deeper.
-        auto deeper = [xy, tan_thr_sq, &a, &gr_, G_, &p](auto &&g) {
-          if (g.xy == xy)
-            // Exactly equal? Must be self. Ignore.
-            return IGNORE;
-          // norm: If infinity or low precision, no worries.
-          auto norm = std::norm(g.xy - xy);
-          auto rsq = g.radius * g.radius;
-          if (norm < rsq || tan_thr_sq < rsq / norm)
-            // Either inside or too close (view angle too wide).
-            return DEEPER;
-
-          // Treating g as a point particle, compute the gravitational
-          // acceleration [L/T/T] onto p due to g.
-
-          // (Also, apply the gravitational constant [G_] in a sneaky way that
-          // won't stress the dynamic range in the middle of the calculations.
-          // And, if `norm` is large, precision won't matter too much since the
-          // inverse cube of the distance is sought. But if `norm` is small,
-          // then sqrt(norm) is as precise as abs.)
-          a += gr_.field({xy, p.radius}, {g.xy, g.radius}, G_ * g.mass,
-                         std::sqrt(norm));
-          // (Enough detail.)
-          return IGNORE;
-        };
-        // Compute the acceleration (a) on the tree.
-        tree->depth_first(deeper);
-        return a;
-      };
-      // step(): Integrate.
-      // (Calls accel() above a few times with slightly different xy.)
-      auto step = Integrator{p.xy, p.v};
-      step.step(dt, accel);
-      p.xy = step.y0, p.v = step.y1;
+      auto i = Integrator{p.xy, p.v};
+      i.step(dt, [this, &tree, &p](auto xy) {
+        return this->accelerate(tree, {xy, p.radius});
+      });
+      p.xy = i.y0, p.v = i.y1;
     }
   }
 
