@@ -163,7 +163,7 @@ public:
           auto norm = std::norm(g.xy - xy);
           auto rsq = g.radius * g.radius;
           if (norm < rsq || tan_thr_sq < rsq / norm)
-            // Either inside or too close (view angle too small).
+            // Either inside or too close (view angle too wide).
             return DEEPER;
 
           // Treating g as a point particle, compute the gravitational
