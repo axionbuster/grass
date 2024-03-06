@@ -49,17 +49,17 @@ struct Particle {
 /// @brief A type of integrator accepted by Table.
 template <typename I, typename F>
 concept IntegratorType = requires(I i, std::complex<F> c) {
-                           { I{c, c} } -> std::convertible_to<I>;
-                           { i.y0 } -> std::convertible_to<std::complex<F>>;
-                           { i.y1 } -> std::convertible_to<std::complex<F>>;
-                           // Also, with a function f of type std::complex<F> ->
-                           // std::complex<F>, and an F type value h, possible
-                           // to advance internal state with the syntax:
-                           //    i.step(h, f);
-                           // [h ostensibly stands for "step size," F for
-                           // "floating point," and f computes the second
-                           // derivative from the zeroth derivative.]
-                         };
+  { I{c, c} } -> std::convertible_to<I>;
+  { i.y0 } -> std::convertible_to<std::complex<F>>;
+  { i.y1 } -> std::convertible_to<std::complex<F>>;
+  // Also, with a function f of type std::complex<F> ->
+  // std::complex<F>, and an F type value h, possible
+  // to advance internal state with the syntax:
+  //    i.step(h, f);
+  // [h ostensibly stands for "step size," F for
+  // "floating point," and f computes the second
+  // derivative from the zeroth derivative.]
+};
 
 /// @brief Store a vector of particles and integrate them using the provided
 /// integrator type.
@@ -145,9 +145,9 @@ public:
       // what is the acceleration experienced by p due to all the other
       // particles or approximations (g)?
       auto const tan_thr_sq = tan_angle_threshold * tan_angle_threshold;
-      auto const G = this->G;
-      auto &&gr = this->gr;
-      auto accel = [tan_thr_sq, &gr, G, &p, &tree](auto xy) {
+      auto const G_ = this->G;
+      auto &&gr_ = this->gr;
+      auto accel = [tan_thr_sq, &gr_, G_, &p, &tree](auto xy) {
         std::complex<float> a;
         // These bool-coercing constants are due to
         // `dyn::bh32::Group<,>::depth_first`.
@@ -155,7 +155,7 @@ public:
         // Look at the group (g) of particles.
         // Compute the acceleration and then exit the branch if far enough.
         // Otherwise, go deeper.
-        auto deeper = [xy, tan_thr_sq, &a, &gr, G, &p](auto &&g) {
+        auto deeper = [xy, tan_thr_sq, &a, &gr_, G_, &p](auto &&g) {
           if (g.xy == xy)
             // Exactly equal? Must be self. Ignore.
             return IGNORE;
@@ -169,13 +169,13 @@ public:
           // Treating g as a point particle, compute the gravitational
           // acceleration [L/T/T] onto p due to g.
 
-          // (Also, apply the gravitational constant [G] in a sneaky way that
+          // (Also, apply the gravitational constant [G_] in a sneaky way that
           // won't stress the dynamic range in the middle of the calculations.
           // And, if `norm` is large, precision won't matter too much since the
           // inverse cube of the distance is sought. But if `norm` is small,
           // then sqrt(norm) is as precise as abs.)
-          a += gr.field({xy, p.radius}, {g.xy, g.radius}, G * g.mass,
-                        std::sqrt(norm));
+          a += gr_.field({xy, p.radius}, {g.xy, g.radius}, G_ * g.mass,
+                         std::sqrt(norm));
           // (Enough detail.)
           return IGNORE;
         };
