@@ -1,11 +1,14 @@
 #ifndef GRASS_TABLE_H
 #define GRASS_TABLE_H
 
-#include <vector>
-
+#include <algorithm>
+#include <barnes_hut.h>
+#include <cassert>
 #include <circle.h>
 #include <kahan.h>
 #include <newton.h>
+#include <optional>
+#include <vector>
 #include <verlet.h>
 #include <yoshida.h>
 
@@ -40,16 +43,69 @@ struct Particle {
 /// @brief A type of integrator accepted by Table.
 template <typename I, typename F>
 concept IntegratorType = requires(I i, std::complex<F> c) {
-  { I{c, c} } -> std::convertible_to<I>;
-  { i.y0 } -> std::convertible_to<std::complex<F>>;
-  { i.y1 } -> std::convertible_to<std::complex<F>>;
-  // Also, with a function f of type std::complex<F> -> std::complex<F>,
-  // and an F type value h,
-  // possible to advance internal state with the syntax:
-  //    i.step(h, f);
-  // [h ostensibly stands for "step size," F for "floating point,"
-  // and f computes the second derivative from the zeroth derivative.]
+                           { I{c, c} } -> std::convertible_to<I>;
+                           { i.y0 } -> std::convertible_to<std::complex<F>>;
+                           { i.y1 } -> std::convertible_to<std::complex<F>>;
+                           // Also, with a function f of type std::complex<F> ->
+                           // std::complex<F>, and an F type value h, possible
+                           // to advance internal state with the syntax:
+                           //    i.step(h, f);
+                           // [h ostensibly stands for "step size," F for
+                           // "floating point," and f computes the second
+                           // derivative from the zeroth derivative.]
+                         };
+
+namespace detail {
+
+/// "Extra data" stored for a Barnes-Hut tree node. A circle.
+struct Physicals {
+  /// Center
+  std::complex<float> xy;
+
+  /// Radius and number of particles (integer).
+  /// (Integers in floating points to avoid integer-float conversions).
+  float radius{}, count{}, mass{};
+
+  // Three required member functions (by `dyn::bh32::View::layer`):
+  //  1. No-argument constructor.
+  //  2. Constructor given a range of particles.
+  //  3. Merger function using (+=).
+
+  Physicals() = default;
+
+  /// Given a range of particles (with an `xy` field), compute the quantities.
+  template <class I> Physicals(I first, I last) {
+    auto f = first;
+    while (f != last)
+      // Welford's online average algorithm.
+      xy += (f++->xy - xy) / ++count;
+    for (f = first; f != last; ++f) {
+      radius = std::max(radius, std::abs(f->xy - xy));
+      mass += f->mass;
+    }
+  }
+
+  /// Merge p's information.
+  Physicals &operator+=(Physicals const &p) {
+    if (this == &p)
+      // Cannot violate const contract.
+      return count += count, *this;
+    // Compute the new average xy.
+    auto sum = count + p.count;
+    auto proportion0 = count / sum;
+    auto proportion1 = p.count / sum;
+    xy = proportion0 * xy + proportion1 * p.xy;
+    // The rest.
+    count += p.count;
+    mass += p.mass;
+    radius = std::max(radius, p.radius + std::abs(p.xy - xy));
+    return *this;
+  }
+
+  [[nodiscard]] bool single() const { return count == 1.0f; }
 };
+
+} // namespace detail
 
 /// @brief Store a vector of particles and integrate them using the provided
 /// integrator type.
@@ -64,36 +120,64 @@ class Table : public std::vector<Particle> {
 public:
   /// @brief Universal gravitational constant [LLL/M/T/T]. Modify freely.
   float G{1.0f};
+  float tan_angle_threshold{0.0874887f}; // tan(5 deg)
 
   /// @brief Perform an integration step.
   /// @param dt Step size [units: T].
   void step(float dt) noexcept {
-    auto copy{*this};
+    namespace bh = dyn::bh32;
+
+    // Sort the particles in Z-order.
+    auto morton = [](auto &&p) { return bh::morton(p.xy); };
+    auto morton_masked = [&morton](auto &&p,
+                                   auto m) -> std::optional<uint64_t> {
+      if (auto z = morton(p); z.has_value())
+        return z.value() & m;
+      else
+        return {};
+    };
+    std::ranges::sort(begin(), end(), {}, morton);
+
+    // Make a copy of this instance, and then set up a view.
+    auto const copy{*this};
+    auto tree =
+        bh::tree<detail::Physicals>(this->begin(), this->end(), morton_masked);
+
+    // Iterate over the particles, summing up their forces.
     for (size_t i = 0; i < size(); i++) {
-      auto &&p = (*this)[i];
+      auto &&p = copy[i];
       // accel:
       // Supposing that particle p is located instead at the position xy below,
       // what is the acceleration experienced by p due to all the other
-      // particles (q)?
+      // particles or approximations (g)?
       auto accel = [&](auto xy) {
         dyn::Kahan<std::complex<float>> a;
-        // NOTE: the nested loop begins here.
-        for (auto &&q : *this) {
-          if (&p != &q) {
-            dyn::Circle<float> cp{xy, p.radius}, cq = q.circle();
-            a += gr.field(cp, cq, G * q.mass);
-          }
-        }
+        enum { IGNORE = 0, DEEPER = 1 };
+        auto process = [&](auto &&g) {
+          auto gxy = g.xy;
+          auto gra = g.radius;
+          auto gm = g.mass;
+          auto dist = std::abs(gxy - xy);
+          if (g.single() && gxy == xy)
+            return IGNORE;
+          if (dist < gra)
+            return DEEPER;
+          if (auto tan = gra / dist; tan_angle_threshold < tan)
+            return DEEPER;
+          auto cp = dyn::Circle{xy, p.radius}, cg = dyn::Circle{gxy, gra};
+          a += gr.field(cp, cg, G * gm);
+          return IGNORE;
+        };
+        tree->depth_first(process);
         return a();
       };
       // step(): Integrate.
       // (Calls accel() above a few times with slightly different xy.)
       auto step = Integrator{p.xy, p.v};
       step.step(dt, accel);
-      auto &q = copy[i];
+      auto &q = (*this)[i];
       q.xy = step.y0, q.v = step.y1;
     }
-    *this = copy;
   }
 
   /// @brief Refresh the "disk" used for parts of the calculation.

@@ -15,7 +15,7 @@
 using namespace phy;
 
 static int do_main() {
-  auto constexpr PARTICLES_LIMIT = 1'000;
+  auto constexpr PARTICLES_LIMIT = 5'000;
   auto constexpr RADIUS = 0.05f;
   auto constexpr MASS = 1.0f;
   auto constexpr too_far = [](Particle &p) {
@@ -43,6 +43,7 @@ static int do_main() {
     return Particle{{0}, {0}, mass, radius};
   };
 
+  SetConfigFlags(FLAG_WINDOW_RESIZABLE);
   InitWindow(600, 600, "Basic 1,000 particle demo (click to add particles)");
 
   // The physical table (store particles, etc.); backup.
@@ -119,10 +120,7 @@ static int do_main() {
   cam0 = cam;
 
   while (!WindowShouldClose()) {
-    // Apply variable time.
-    // FIXME: The integrators Yoshida and Verlet currently do not support
-    //  variable time; numerical errors may occur (but not programming errors).
-    float dt = interactive ? GetFrameTime() : interactive.target_dt();
+    float dt = interactive.target_dt();
 
     // Reset the simulation (R).
     if (IsKeyPressed(KEY_R))
@@ -225,24 +223,9 @@ static int do_main() {
 
     // Draw all particles in the frame.
     BeginMode2D(cam);
-    {
-      // Compute the screen's less-less (ll) and greater-greater (gg) corners in
-      // the world coordinate system so that draw calls would only be issued for
-      // certainly visible particles.
-      std::complex<float> scwh{float(GetScreenWidth()),
-                               float(GetScreenHeight())};
-      std::complex<float> scof{cam.offset.x, cam.offset.y};
-      std::complex<float> sctg{cam.target.x, cam.target.y};
-      scof /= cam.zoom;
-      auto scsc = scwh / cam.zoom - scof;
-      auto ll = sctg - scsc, gg = sctg + scsc;
-      for (auto &&p : table) {
-        auto cp = p.circle();
-        if (dyn::disk_arrect_isct(cp, ll, gg))
-          // Yes, the particle (p) is certainly overlapping with the
-          // rectangle with the corners ll and gg; draw it.
-          DrawCircleV({cp.real(), cp.imag()}, cp.radius, WHITE);
-      }
+    for (auto &&p : table) {
+      auto cp = p.circle();
+      DrawCircleV({cp.real(), cp.imag()}, cp.radius, WHITE);
     }
     EndMode2D();
 

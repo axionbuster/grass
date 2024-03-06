@@ -46,7 +46,7 @@ struct Physicals {
   /// (Integers in floating points to avoid integer-float conversions).
   float radius{}, count{};
 
-  // Three required member functions (by `dyn::bh32::View::groups`):
+  // Three required member functions (by `dyn::bh32::View::layer`):
   //  1. No-argument constructor.
   //  2. Constructor given a range of particles.
   //  3. Merger function using (+=).
@@ -68,7 +68,7 @@ struct Physicals {
   Physicals &operator+=(Physicals const &p) {
     if (this == &p)
       // Cannot violate const contract.
-      return count *= 2.0f, *this;
+      return count += count, *this;
     // Compute the new average xy.
     auto sum = count + p.count;
     auto proportion0 = count / sum;
@@ -79,6 +79,8 @@ struct Physicals {
     radius = std::max(radius, p.radius + std::abs(p.xy - xy));
     return *this;
   }
+
+  [[nodiscard]] bool single() const { return count == 1.0f; }
 };
 
 /// Store particles
@@ -153,50 +155,47 @@ static int do_main() {
       // Used for signaling in the Barnes-Hut iteration.
       // Contract (boolean-convertible) is due to the free function
       // `dyn::bh32::run`.
-      enum { KEEP = 0, ERASE = 1 };
+      enum { IGNORE = 0, DEEPER = 1 };
 
       // For each "group" (bunch of particles considered to have the same
       // level of detail), do whatever is desired, and then decide whether the
-      // particles in the group should be considered at the next round (KEEP),
-      // or if all the particles could be discarded (REMOVE).
-      auto process = [&user, w_mouse, tan_angle_threshold,
-                      max_view_distance](auto &&g) {
-        auto gxy = g.data.xy;
-        auto gr = g.data.radius;
-        auto dist = std::abs(gxy - w_mouse);
-        if (max_view_distance < dist - gr)
+      // particles in the group should be considered at the next round (DEEPER),
+      // or if all the particles could be discarded (IGNORE).
+      auto deeper = [&user, w_mouse, tan_angle_threshold,
+                     max_view_distance](auto &&g) {
+        auto dist = std::abs(g.xy - w_mouse);
+        if (max_view_distance < dist - g.radius)
           // Too far from the boundary of the group's circle.
-          return ERASE;
+          return IGNORE;
         auto square = [](auto x) { return x * x; };
         auto dim = 1.0f - square(dist / max_view_distance); // [0, 1] closed.
         if (g.single())
           // This group (g) wraps a single particle.
           // Process and then forget.
-          return user.dot(gxy, Fade(WHITE, dim)), ERASE;
+          return user.dot(g.xy, Fade(WHITE, dim)), IGNORE;
         // Test the distance and the (approximate) viewing angle.
-        if (dist < gr)
+        if (dist < g.radius)
           // This group (g)'s circle contains the given point (w_mouse).
           // Higher level of detail required.
-          return KEEP;
+          return DEEPER;
         // Construct a radius perpendicular to the line of sight from the
         // given point (w_mouse) from the center of the group's circle, and
         // then measure the angle between the ray from w_mouse to the radial
         // endpoint and the ray of the line of sight. This is an
         // underapproximation (but a good one) of one-half of the true view
         // angle.
-        if (auto tan = gr / dist; tan_angle_threshold < tan)
+        if (auto tan = g.radius / dist; tan_angle_threshold < tan)
           // View angle too wide; higher detail required.
-          return KEEP;
+          return DEEPER;
         // View angle is small enough. Treat g as a point particle. Draw the
         // circle that represents g for visualization.
-        DrawCircleLinesV({gxy.real(), gxy.imag()}, gr, Fade(YELLOW, dim));
-        return ERASE;
+        DrawCircleLinesV({g.xy.real(), g.xy.imag()}, g.radius,
+                         Fade(YELLOW, dim));
+        return IGNORE;
       };
 
       namespace bh = dyn::bh32;
 
-      // Require Z-sorted particles in state.
-      bh::View<State const &> view{state};
       // Masked Morton (Z) code.
       auto morton = [](auto &&p, uint64_t m) -> std::optional<uint64_t> {
         if (auto w = p.morton(); w.has_value())
@@ -204,10 +203,10 @@ static int do_main() {
         else
           return {};
       };
-      // Compute the "levels."
-      auto levels = bh::levels<Physicals>(view, morton);
-      // Let's go. Draw the circles and particles.
-      bh::run(levels, process);
+      // Generate a tree spanning all the particles.
+      auto tree = bh::tree<Physicals>(state.begin(), state.end(), morton);
+      // Run it.
+      tree->depth_first(deeper);
     }
     EndMode2D();
 

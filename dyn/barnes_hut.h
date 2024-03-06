@@ -1,13 +1,19 @@
 #ifndef GRASS_BARNES_HUT_H
 #define GRASS_BARNES_HUT_H
 
-#include <algorithm>
-#include <array>
-#include <complex>
-#include <concepts>
-#include <cstdint>
-#include <optional>
+#ifndef NDEBUG
 #include <vector>
+#endif
+
+#include <array>
+#include <cassert>
+#include <complex>
+#include <cstdint>
+#include <deque>
+#include <memory>
+#include <optional>
+#include <queue>
+#include <stack>
 
 namespace dyn::bh32 {
 
@@ -69,196 +75,215 @@ std::optional<uint64_t> morton(std::complex<float> xy) {
   return {};
 }
 
-/// A consecutive group of particles.
-/// @tparam E Extra data (type of field `data`). An E object may be constructed
-/// by passing two iterators to particles ("begin" and "end") or by default
-/// construction, and it can be updated using the `+=` operator with an E object
-template <typename E, typename I> struct Group {
+namespace detail {
+
+template <class, class I> auto tree(I, I, auto &&) noexcept;
+struct DeleteGroup;
+
+/// A group of particles.
+template <class I, class E> class Group {
+  template <class, class J> friend auto tree(J, J, auto &&) noexcept;
+  friend struct DeleteGroup;
+
+  /// First and last particles, respectively.
   I first, last;
-  E data{};
-  /// Create a group of particles using iterators to particles.
-  Group(I first, I last) : first{first}, last{last}, data{first, last} {}
-  /// Summarize a range of smaller groups.
-  Group(auto g_first, auto g_last) {
-    first = g_first->first;
-    while (g_first != g_last)
-      last = g_first->last, data += g_first++->data;
-  }
-  /// Iterate over the particles.
-  [[nodiscard]] I begin() { return first; }
-  /// Iterate over the particles.
-  [[nodiscard]] I end() { return last; }
-  /// Iterate over the particles.
-  [[nodiscard]] I begin() const { return first; }
-  /// Iterate over the particles.
-  [[nodiscard]] I end() const { return last; }
-  /// Test whether this group holds exactly one particle.
-  [[nodiscard]] bool single() const {
-    if (first == last)
-      return false;
-    auto a{first};
-    return ++a == last;
-  }
-  /// Test: Are the iterators equal (disregarding `data`)?
-  [[nodiscard]] bool operator==(Group const &g) const {
-    // Ignore extra data.
-    return this == &g || (first == g.first && last == g.last);
-  }
-};
 
-/// A view to a set of particles.
-/// @tparam S A set of particles (begin() and end() iterates over the particles)
-/// @tparam M An unsigned integer type used for masking Morton (Z) codes.
-template <class S, std::unsigned_integral M = uint64_t> class View {
-  /// Mask (begin with the finest detail, first).
-  M mask = ~M{};
-
-  /// Iterate over particles (`begin` and `end` calls).
-  S s;
-
-  // Has a method named `size`?
-  // (Thanks to some wizards on Stack Overflow.)
-  template <class U>
-  static decltype(std::declval<U>().size(), void(), std::true_type()) test(int);
-  template <class> static std::false_type test(...);
-  typedef decltype(test<S>(0)) has_size_test;
-  enum { has_size = has_size_test::value };
+  /// The child and sibling group pointers, if any.
+  /// (Left-child right-sibling tree).
+  Group *child{}, *sibling{};
 
 public:
-  View(S s) : s(s) {}
+  E extra;
 
-  /// Return type of `groups`.
-  template <class E> using Groups = std::vector<Group<E, decltype(s.begin())>>;
+  ~Group() = default;
 
-  /// Compute the groups at the current level of detail.
-  /// @param z Take the particle and then compute the Morton (Z) code masked by
-  /// the given M-type mask.
-  /// @param prior The result of this function call for one finer level of
-  /// detail.
-  template <class E>
-  [[nodiscard]] Groups<E> groups(auto &&z, Groups<E> const &prior = {}) const {
-    if (!mask || s.begin() == s.end())
-      // Empty output used as sentinel to halt processing by the free functions:
-      //  - `levels`
-      //  - `run`
-      return {};
+private:
+  Group(I const first, I const last) noexcept
+      : first{first}, last{last}, extra{first, last} {}
 
-    // prefix: Compute the masked Morton (Z) code, which computes the prefix
-    // bits (less significant bits cut off).
-    std::unsigned_integral auto m = mask;
-    auto prefix = [&z, m](auto &&p) { return z(p, m); };
-
-    Groups<E> novel{};
-    if constexpr (has_size)
-      novel.reserve(s.size());
-
-    if (prior.empty()) {
-      // First call? No problem. Turn each particle into a group.
-      for (auto i = s.begin(); i != s.end(); ++i) {
-        auto j = i;
-        novel.emplace_back(i, ++j);
-      }
-      return novel;
+#ifndef NDEBUG
+  [[maybe_unused]] [[nodiscard]] size_t debug_tally_leaves() const noexcept {
+    std::stack<Group const *> v;
+    v.push(this);
+    size_t tally{};
+    while (!v.empty()) {
+      auto h = v.top();
+      v.pop();
+      if (!h->child)
+        ++tally;
+      for (auto a = h->child; a; a = a->sibling)
+        v.push(a);
     }
+    return tally;
+  }
+#endif
 
-    // One finer level of detail exists in `prior`.
-    // Merge the groups, then, instead of recalculating everything.
-    // Two-pointer solution: g and h are iterators to the groups in `prior`.
-    auto g = prior.begin(), h = g;
-    // Merge groups having the same Morton (Z)-prefixes (a, b).
-    auto a = prefix(*g->first);
-    while (++h != prior.end()) {
-      auto b = prefix(*h->first);
-      // If same prefix, don't do anything specific.
-      // If new prefix, create a group by merging many groups.
-      if (a != b) {
-        // Yes, new prefix. Treat h as past-the-end iterator to the range of
-        // groups. Pass g and h to the "range of groups" constructor of Group.
-        novel.emplace_back(g, h);
-        g = h;
-        a = b;
-      }
+  void depth_first_delete() noexcept {
+    assert(!this->sibling);
+#ifndef NDEBUG
+    auto debug_tally_ = debug_tally_leaves();
+    assert(debug_tally_ == 1'000); // Change count as needed.
+#endif
+    std::stack<Group *> v;
+    v.push(this);
+    while (!v.empty()) {
+      auto h = v.top();
+      v.pop();
+      for (auto a = h->child; a; a = a->sibling)
+        v.push(a);
+      delete h;
     }
-    // Handle runoff.
-    if (g != h)
-      novel.emplace_back(g, h);
-    return novel;
   }
 
-  /// Make the level of detail one level coarser.
-  void coarser() {
-    // Let `mask` run off to zero if at last level of detail.
-    mask <<= 2;
+public:
+  /// Apply depth-first traversal. If `deeper` suggests going deeper (true),
+  /// go deeper.
+  void depth_first(auto &&deeper) const {
+    assert(!this->sibling);
+    std::stack<Group const *> v;
+    v.push(this);
+    while (!v.empty()) {
+      auto h = v.top();
+      v.pop();
+      if (deeper(h->extra))
+        for (auto a = h->child; a; a = a->sibling)
+          v.push(a);
+    }
   }
 };
 
-/// Compute all levels given a view and a way to compute the Morton codes given
-/// a particle and a mask (see View::groups for information on `z`).
-template <class E> auto levels(auto &&view, auto &&z) {
-  // (Typing hacks)
-  auto a = view.template groups<E>(z);
-  auto l = std::vector<decltype(a)>{std::move(a)};
-  do
-    // Regurgitate.
-    view.coarser(), l.emplace_back(view.groups(z, l.back()));
-  while (!l.back().empty());
-  l.pop_back();
-  // Cull consecutive layers with the identical groups.
-  l.erase(std::unique(l.begin(), l.end()), l.end());
-  return l;
-}
-
-/// Process the levels.
-/// @param levels What is returned by the free function `levels`.
-/// @param process Return nonzero if a group should be discarded; zero if it
-/// should be broken up into finer pieces.
-void run(auto const &levels, auto &&process) {
-  if (levels.rbegin() == levels.rend())
-    return;
-
-  // Below, `novel` and `prior` are collections of groups.
-  // A "group" is a range of particles (plus any extra data).
-
-  // Filter `novel` for inclusion in groups in `prior` knowing that the
-  // groups are sorted in Morton order.
-  auto begin = levels.rbegin();
-  auto prior{*begin};
-  while (++begin != levels.rend()) {
-    auto const &novel = *begin;
-    // copy: Filtered copy of `novel`.
-    decltype(prior) copy{};
-    // Iterators to a prior group (pg) and a novel group (ng).
-    auto pg = prior.begin();
-    auto ng = novel.begin();
-    if (ng == novel.end() || pg == prior.end())
-      break;
-
-    // Skip.
-    while (ng->begin() != pg->begin())
-      ++ng;
-
-    // Cull.
-    while (pg != prior.end()) {
-      if (ng->begin() == pg->begin()) {
-        while (ng->end() != pg->end())
-          copy.push_back(*ng++);
-        copy.push_back(*ng++), ++pg;
-      } else
-        while (ng->begin() != pg->begin())
-          ++ng;
-    }
-
-    // Process the chosen groups in `copy`.
-    std::erase_if(copy, process);
-
-    // Break if no more.
-    if (copy.empty())
-      break;
-
-    // Learn which branches are kept and which are pruned.
-    prior = copy;
+struct DeleteGroup {
+  template <class G> void operator()(G *const g) const noexcept {
+    if (g)
+      g->depth_first_delete();
   }
+};
+
+/// Delete a group thoroughly in depth-first order.
+/// Use as a deleter for smart pointers.
+inline DeleteGroup constexpr delete_group;
+
+/// Construct a tree ranging from the particle at `first` and the end delimited
+/// by the past-the-end iterator `last`.
+/// @param z With the syntax `auto z(auto &&particle, uint64_t mask)`, find the
+/// Morton code (Z-code) of the particle with the mask being applied by bitwise
+/// AND.
+/// @returns A pointer to the root node of the tree.
+template <class E, class I>
+auto tree(I const first, I const last, auto &&z) noexcept {
+  struct {
+    uint64_t mask = ~uint64_t{};
+    void shift() { mask <<= 2; }
+  } state;
+  using G = Group<I, E>;
+  using P = std::shared_ptr<G>;
+
+  // Check for degeneracies (0 or 1 particle cases)
+  if (first == last)
+    return P{};
+  else if (auto f = first; ++f == last)
+    return P{new G{first, last}, delete_group};
+
+  // Two or more particles.
+  // Make layers (q).
+  auto q = std::deque<G *>{};
+
+  // First, turn every particle into a group.
+  for (auto f = first; f != last; ++f) {
+    auto g = f;
+    ++g, q.push_back(new G{f, g});
+  }
+  // (Don't forget the sibling relationships).
+  for (typename decltype(q)::size_type i = 0; i < q.size() - 1; i++)
+    q[i]->sibling = q[i + 1];
+  state.shift();
+
+  // Now, actually make the layers.
+
+  // Find the Z-code with the lowest few bits zeroed out.
+  auto prefix = [&state, &z](auto &&p) { return z(p, state.mask); };
+
+  decltype(q) q2{};
+  while (state.mask) {
+    q2.clear();
+    // Scan the queue (q) and then bring every subarray of groups with the same
+    // Z-prefix under a common parent.
+    assert(q.size());
+    auto top = q.front();
+    q.pop_front();
+    class B {
+      /// First particle.
+      I first;
+
+      /// Earliest and latest groups, respectively.
+      G *group0, *group1;
+
+    public:
+      explicit B(G *const g) noexcept : first{g->first}, group0{g}, group1{g} {}
+
+      /// Admit a group.
+      void merge(G *const g) noexcept { group1 = g; }
+
+      /// Create a common parent group to all the included groups.
+      [[nodiscard]] G *pop() const noexcept {
+        // Test: many groups or one group?
+        if (group0 == group1)
+          // One group. Don't allocate; reuse.
+          return group1;
+        // Many groups.
+        assert(group0->sibling);
+        auto h = new G{first, group1->last};
+        // Say "no" to aliasing.
+        group1->sibling = {};
+        // Admit the first group as the child.
+        h->child = group0;
+        return h;
+      }
+
+      /// Get the first particle.
+      [[nodiscard]] I get_first() const noexcept { return first; }
+    } parent{top};
+    // Repeatedly compare the prefixes with the leading parent group to decide
+    // whether to create a new parent group or to merge with the leading group.
+    auto z0 = prefix(*parent.get_first());
+    for (auto &&g : q) {
+      auto z1 = prefix(*g->first);
+      if (z0 == z1) {
+        // Same prefix.
+        parent.merge(g);
+      } else {
+        // New prefix.
+        q2.push_back(parent.pop());
+        // Update future new group.
+        parent = B{g};
+        // This new group will have this prefix.
+        z0 = z1;
+      }
+    }
+    // Unconditional runoff: Handle it.
+    q2.push_back(parent.pop());
+    // Create or override siblings relationships in new layer (q2).
+    assert(q2.size());
+    for (typename decltype(q2)::size_type i = 0; i < q2.size() - 1; i++)
+      q2[i]->sibling = q2[i + 1];
+    // Recognize lower level as children.
+    if (q2.front() != top)
+      q2.front()->child = top;
+    // Next level or stop.
+    std::swap(q, q2);
+    state.shift();
+  }
+
+  // Create and then set up root node. Return it.
+  assert(q.size());
+  auto root = new G{first, last};
+  root->child = q.front();
+  return P{root, delete_group};
 }
+
+} // namespace detail
+
+using detail::tree;
 
 } // namespace dyn::bh32
 
