@@ -6,12 +6,12 @@
 #include <circle.h>
 #include <complex>
 #include <cstdint>
+#include <execution>
 #include <newton.h>
 #include <optional>
 #include <type_traits>
 #include <vector>
 #include <verlet.h>
-#include <yoshida.h>
 
 namespace phy {
 
@@ -156,16 +156,14 @@ public:
     auto const tree = bh::tree<Physicals>(begin(), end(), morton_masked);
 
     // Iterate over the particles, summing up their forces.
-    for (auto &&p : *this) {
-      // Supposing that particle p is located instead at the position xy below,
-      // what is the acceleration experienced by p due to all the other
-      // particles or approximations (g)?
-      auto i = Integrator{p.xy, p.v};
-      i.step(dt, [this, &tree, &p](auto xy) {
-        return this->accelerate(tree, {xy, p.radius});
-      });
-      p.xy = i.y0, p.v = i.y1;
-    }
+    std::for_each(std::execution::par_unseq, begin(), end(),
+                  [this, &tree, &dt](auto &&p) {
+                    auto i = Integrator{p.xy, p.v};
+                    i.step(dt, [this, &tree, &p](auto xy) {
+                      return this->accelerate(tree, {xy, p.radius});
+                    });
+                    p.xy = i.y0, p.v = i.y1;
+                  });
   }
 
   /// @brief Refresh the "disk" used for parts of the calculation.
