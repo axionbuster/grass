@@ -48,7 +48,11 @@ public:
 
     // Are the circles...
     auto s = c1.radius + c0.radius, d = std::abs(c1.radius - c0.radius),
-         r = distance <= F{0.0} ? distance : std::abs(c1), t = F(1) / r;
+         r = distance < F{0.0} ? std::abs(c1) : distance;
+    if (!r)
+      // Accidental overlap? Ignore the current frame.
+      return F(0);
+    auto t = F(1) / r;
     if (s <= r)
       // Disjoint? Use the usual law, treating these circles as point
       // particles whose masses are concentrated at the given centers.
