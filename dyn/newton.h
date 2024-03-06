@@ -37,18 +37,18 @@ public:
 
   /// @brief Compute the gravitational attraction that a test particle
   /// represented by the circle c0 due to a mass of circle c1 and mass m1.
-  /// @param distance Optional distance (or zero if needs to be computed).
+  /// @param distance Optional distance (non-positive if must be computed).
   /// @return A vector quantity of dimensions [M/L/L]. Divide it by the
   /// universal gravitational constant ("G") to get L/T/T.
   std::complex<F> field(Circle<F> c0, Circle<F> c1, F m1,
-                        F distance = F{}) const noexcept {
+                        F distance = F{-1.0}) const noexcept {
     // Use complex arithmetic to translate the coordinate system so that c0
     // appears to be at the origin, but let the respective radii be unaffected.
     c1 -= c0;
 
     // Are the circles...
     auto s = c1.radius + c0.radius, d = std::abs(c1.radius - c0.radius),
-         r = distance ? distance : std::abs(c1), t = F(1) / r;
+         r = distance <= F{0.0} ? distance : std::abs(c1), t = F(1) / r;
     if (s <= r)
       // Disjoint? Use the usual law, treating these circles as point
       // particles whose masses are concentrated at the given centers.

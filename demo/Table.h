@@ -93,7 +93,7 @@ class Table : public std::vector<Particle> {
       }
       xy = std::complex<float>{xyd / double(mass)};
       for (auto i = first; i != last; ++i)
-        radius = std::max(radius, std::abs(i->xy - xy));
+        radius = std::max(radius, i->radius + std::abs(i->xy - xy));
     }
 
     /// Merge p's information.
@@ -128,8 +128,6 @@ public:
     std::ranges::stable_sort(begin(), end(), {},
                              [](auto &&p) { return p.morton; });
 
-    // Make a copy of this instance, and then set up a view.
-    auto const copy{*this};
     // Apply bitwise AND with the mask (m) to the particle (p).
     auto morton_masked = [](auto &&p, auto m) -> std::optional<uint64_t> {
       if (auto z = p.morton; z.has_value())
@@ -141,16 +139,15 @@ public:
     auto const tree = bh::tree<Physicals>(begin(), end(), morton_masked);
 
     // Iterate over the particles, summing up their forces.
-    for (size_t i = 0; i < size(); i++) {
-      auto &&p = copy[i];
+    for (auto &&p : *this) {
       // accel:
       // Supposing that particle p is located instead at the position xy below,
       // what is the acceleration experienced by p due to all the other
       // particles or approximations (g)?
-      auto const tan_thr = tan_angle_threshold;
+      auto const tan_thr_sq = tan_angle_threshold * tan_angle_threshold;
       auto const G = this->G;
       auto &&gr = this->gr;
-      auto accel = [tan_thr, &gr, G, &p, &tree](auto xy) {
+      auto accel = [tan_thr_sq, &gr, G, &p, &tree](auto xy) {
         std::complex<float> a;
         // These bool-coercing constants are due to
         // `dyn::bh32::Group<,>::depth_first`.
@@ -158,21 +155,25 @@ public:
         // Look at the group (g) of particles.
         // Compute the acceleration and then exit the branch if far enough.
         // Otherwise, go deeper.
-        auto deeper = [xy, tan_thr, &a, &gr, G, &p](auto &&g) {
+        auto deeper = [xy, tan_thr_sq, &a, &gr, G, &p](auto &&g) {
           if (g.xy == xy)
             // Exactly equal? Must be self. Ignore.
             return IGNORE;
-          auto distance = std::abs(g.xy - xy);
-          if (distance < g.radius)
-            return DEEPER;
-          if (auto tan = g.radius / distance; tan_thr < tan)
+          // norm: If infinity or low precision, no worries.
+          auto norm = std::norm(g.xy - xy);
+          auto rsq = g.radius * g.radius;
+          if (norm < rsq || tan_thr_sq < rsq / norm)
+            // Either inside or too close (view angle too small).
             return DEEPER;
           // Treat group (g) as a point particle.
           // (Also, apply the gravitational constant [G] in a sneaky way
           // that won't stress the dynamic range in the middle of the
           // calculations.)
-          a += gr.field(dyn::Circle{xy, p.radius}, dyn::Circle{g.xy, g.radius},
-                        G * g.mass, distance);
+          // (Also, if `norm` is large, precision won't matter too much since
+          // the inverse cube of the distance is sought. But if `norm` is
+          // small, then sqrt(norm) is as precise as abs.)
+          a += gr.field({xy, p.radius}, {g.xy, g.radius}, G * g.mass,
+                        std::sqrt(norm));
           // (Enough detail.)
           return IGNORE;
         };
@@ -184,8 +185,7 @@ public:
       // (Calls accel() above a few times with slightly different xy.)
       auto step = Integrator{p.xy, p.v};
       step.step(dt, accel);
-      auto &q = (*this)[i];
-      q.xy = step.y0, q.v = step.y1;
+      p.xy = step.y0, p.v = step.y1;
     }
   }
 
