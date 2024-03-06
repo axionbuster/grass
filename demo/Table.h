@@ -165,13 +165,15 @@ public:
           if (norm < rsq || tan_thr_sq < rsq / norm)
             // Either inside or too close (view angle too small).
             return DEEPER;
-          // Treat group (g) as a point particle.
-          // (Also, apply the gravitational constant [G] in a sneaky way
-          // that won't stress the dynamic range in the middle of the
-          // calculations.)
-          // (Also, if `norm` is large, precision won't matter too much since
-          // the inverse cube of the distance is sought. But if `norm` is
-          // small, then sqrt(norm) is as precise as abs.)
+
+          // Treating g as a point particle, compute the gravitational
+          // acceleration [L/T/T] onto p due to g.
+
+          // (Also, apply the gravitational constant [G] in a sneaky way that
+          // won't stress the dynamic range in the middle of the calculations.
+          // And, if `norm` is large, precision won't matter too much since the
+          // inverse cube of the distance is sought. But if `norm` is small,
+          // then sqrt(norm) is as precise as abs.)
           a += gr.field({xy, p.radius}, {g.xy, g.radius}, G * g.mass,
                         std::sqrt(norm));
           // (Enough detail.)

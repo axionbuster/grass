@@ -92,9 +92,10 @@ template <class I, class E> class Group {
   /// (Left-child right-sibling tree).
   Group *child{}, *sibling{};
 
-public:
+  /// User-provided extra physical data.
   E extra;
 
+public:
   ~Group() = default;
 
 private:
