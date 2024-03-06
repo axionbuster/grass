@@ -138,7 +138,7 @@ private:
 public:
   /// Apply depth-first traversal. If `deeper` suggests going deeper (true),
   /// go deeper.
-  void depth_first(auto &&deeper) {
+  void depth_first(auto &&deeper) const {
     assert(!this->sibling);
     std::stack<Group const *> v;
     v.push(this);
@@ -154,7 +154,8 @@ public:
 
 struct DeleteGroup {
   template <class G> void operator()(G *const g) const noexcept {
-    g->depth_first_delete();
+    if (g)
+      g->depth_first_delete();
   }
 };
 
