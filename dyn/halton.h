@@ -12,15 +12,15 @@ namespace dyn {
 /// @tparam F A floating-point type.
 /// @tparam b "Base" (a small prime number).
 /// @tparam LIM Largest possible value of "index" (inclusive).
-template <typename F = float, unsigned short b = 2, unsigned int LIM = 0x1000>
+template <typename F = float, short b = 2, unsigned int LIM = 0x1000>
 class Halton {
   /// @brief Last index.
-  unsigned short i{};
+  short i{};
 
 public:
   /// @brief Generate a number in the open interval (0, 1).
   /// @param i Index, not zero.
-  constexpr static F x01(unsigned short i) {
+  constexpr static F x01(short i) {
     auto r = F(0), f = F(1);
     while (i)
       f /= b, r += f * (i % b), i /= b;
