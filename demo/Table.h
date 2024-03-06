@@ -43,52 +43,66 @@ struct Particle {
 /// @brief A type of integrator accepted by Table.
 template <typename I, typename F>
 concept IntegratorType = requires(I i, std::complex<F> c) {
-  { I{c, c} } -> std::convertible_to<I>;
-  { i.y0 } -> std::convertible_to<std::complex<F>>;
-  { i.y1 } -> std::convertible_to<std::complex<F>>;
-  // Also, with a function f of type std::complex<F> -> std::complex<F>,
-  // and an F type value h,
-  // possible to advance internal state with the syntax:
-  //    i.step(h, f);
-  // [h ostensibly stands for "step size," F for "floating point,"
-  // and f computes the second derivative from the zeroth derivative.]
-};
+                           { I{c, c} } -> std::convertible_to<I>;
+                           { i.y0 } -> std::convertible_to<std::complex<F>>;
+                           { i.y1 } -> std::convertible_to<std::complex<F>>;
+                           // Also, with a function f of type std::complex<F> ->
+                           // std::complex<F>, and an F type value h, possible
+                           // to advance internal state with the syntax:
+                           //    i.step(h, f);
+                           // [h ostensibly stands for "step size," F for
+                           // "floating point," and f computes the second
+                           // derivative from the zeroth derivative.]
+                         };
 
 namespace detail {
 
-struct W {
+/// "Extra data" stored for a Barnes-Hut tree node. A circle.
+struct Physicals {
+  /// Center
   std::complex<float> xy;
-  float mass{}, radius{};
-  W() = default;
-  W(auto first, auto last) {
-    for (auto p = first; p != last; ++p)
-      mass += p->mass;
-    if (auto p = first; p != last && ++p == last) {
-      xy = first->xy;
-      mass = first->mass;
-      radius = first->radius;
-      return;
+
+  /// Radius and number of particles (integer).
+  /// (Integers in floating points to avoid integer-float conversions).
+  float radius{}, count{}, mass{};
+
+  // Three required member functions (by `dyn::bh32::View::layer`):
+  //  1. No-argument constructor.
+  //  2. Constructor given a range of particles.
+  //  3. Merger function using (+=).
+
+  Physicals() = default;
+
+  /// Given a range of particles (with an `xy` field), compute the quantities.
+  template <class I> Physicals(I first, I last) {
+    auto f = first;
+    while (f != last)
+      // Welford's online average algorithm.
+      xy += (f++->xy - xy) / ++count;
+    for (f = first; f != last; ++f) {
+      radius = std::max(radius, std::abs(f->xy - xy));
+      mass += f->mass;
     }
-    std::complex<double> xyd;
-    for (auto p = first; p != last; ++p) {
-      radius = std::max(radius, p->radius + std::abs(p->xy - xy));
-      xyd += double(p->mass) * std::complex<double>{p->xy};
-    }
-    xy = std::complex<float>{xyd};
   }
-  W &operator+=(W const &w) {
-    if (this == &w) {
-      mass *= 2.0f;
-      return *this;
-    }
-    auto xyd = double(mass) * std::complex<double>{xy} +
-               double(w.mass) * std::complex<double>{w.xy};
-    auto m = double(mass) + double(w.mass);
-    xy = std::complex<float>{xyd / m};
-    mass = float(m);
-    radius = std::max(radius, w.radius + std::abs(w.xy - xy));
+
+  /// Merge p's information.
+  Physicals &operator+=(Physicals const &p) {
+    if (this == &p)
+      // Cannot violate const contract.
+      return count += count, *this;
+    // Compute the new average xy.
+    auto sum = count + p.count;
+    auto proportion0 = count / sum;
+    auto proportion1 = p.count / sum;
+    xy = proportion0 * xy + proportion1 * p.xy;
+    // The rest.
+    count += p.count;
+    mass += p.mass;
+    radius = std::max(radius, p.radius + std::abs(p.xy - xy));
     return *this;
   }
+
+  [[nodiscard]] bool single() const { return count == 1.0f; }
 };
 
 } // namespace detail
@@ -126,8 +140,8 @@ public:
 
     // Make a copy of this instance, and then set up a view.
     auto const copy{*this};
-    bh::View<Table const &> view{copy};
-    auto const levels = bh::levels<detail::W>(view, morton_masked);
+    auto tree =
+        bh::tree<detail::Physicals>(this->begin(), this->end(), morton_masked);
 
     // Iterate over the particles, summing up their forces.
     for (size_t i = 0; i < size(); i++) {
@@ -138,23 +152,23 @@ public:
       // particles or approximations (g)?
       auto accel = [&](auto xy) {
         dyn::Kahan<std::complex<float>> a;
-        enum { KEEP = 0, ERASE = 1 };
+        enum { IGNORE = 0, DEEPER = 1 };
         auto process = [&](auto &&g) {
-          auto gxy = g.data.xy;
-          auto gra = g.data.radius;
-          auto gm = g.data.mass;
+          auto gxy = g.xy;
+          auto gra = g.radius;
+          auto gm = g.mass;
           auto dist = std::abs(gxy - xy);
           if (g.single() && gxy == xy)
-            return ERASE;
+            return IGNORE;
           if (dist < gra)
-            return KEEP;
+            return DEEPER;
           if (auto tan = gra / dist; tan_angle_threshold < tan)
-            return KEEP;
+            return DEEPER;
           auto cp = dyn::Circle{xy, p.radius}, cg = dyn::Circle{gxy, gra};
           a += gr.field(cp, cg, G * gm);
-          return ERASE;
+          return IGNORE;
         };
-        bh::run(levels, process);
+        tree->depth_first(process);
         return a();
       };
       // step(): Integrate.
