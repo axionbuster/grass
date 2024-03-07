@@ -15,7 +15,7 @@ template <typename F = float> struct Verlet {
   /// @param h Step size.
   /// @param y2 A function that takes in a complex zeroth derivative value and
   /// then returns a complex second derivative.
-  template <typename A> void step(F h, A y2) {
+  void step(F h, auto &&y2) {
     auto a = y2(y0);
     y0 += h * y1 + h * h * F(0.5) * a;
     auto b = y2(y0);

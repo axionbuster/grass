@@ -28,7 +28,7 @@ template <typename F = float> struct Yoshida {
   /// @param y2 An effectively stateless function that takes in a complex
   /// zeroth-derivative value and computes the complex second-derivative.
   /// @param h Step size (finite, positive number).
-  template <typename Y2> void step(F h, Y2 y2) {
+  void step(F h, auto &&y2) {
     // Algorithm and constants are due to Wikipedia.
 
     auto constexpr CBRT2 = F(1.259921049894873164767L);
