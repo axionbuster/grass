@@ -101,14 +101,13 @@ static int do_main() {
         user.control.spawned_last_frame = false;
         goto simulate;
       }
-
-      if (table.size() >= PARTICLES_LIMIT)
-        table.erase(table.begin());
-
       // Spawn a random particle at the mouse location.
       auto p = random_particle(); // Mass and radius only.
       p.xy = xy.value();
       table.push_back(p);
+
+      if (table.size() >= PARTICLES_LIMIT)
+        table.erase(table.begin());
 
       user.control.spawned_last_frame = true;
     } else {
