@@ -37,14 +37,14 @@ constexpr bool origin_disk_rectangle(F radius, std::complex<F> ll,
 
   std::complex<F> test;
 
-  if (ll.real() > F(0))
+  if (ll.real() > F{})
     test.real(ll.real());
-  else if (gg.real() < F(0))
+  else if (gg.real() < F{})
     test.real(gg.real());
 
-  if (ll.imag() > F(0))
+  if (ll.imag() > F{})
     test.imag(ll.imag());
-  else if (gg.imag() < F(0))
+  else if (gg.imag() < F{})
     test.imag(gg.imag());
 
   return std::norm(test) < radius * radius;
