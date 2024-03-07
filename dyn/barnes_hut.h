@@ -95,10 +95,12 @@ template <class I, class E> class Group {
   /// User-provided extra physical data.
   E extra;
 
-public:
+private:
   ~Group() = default;
 
-private:
+  Group(Group const &g) = delete;
+  Group &operator=(Group const &g) = delete;
+
   Group(I const first, I const last) noexcept
       : first{first}, last{last}, extra{first, last} {}
 
@@ -173,7 +175,7 @@ auto tree(I const first, I const last, auto &&z) noexcept {
     void shift() { mask <<= 2; }
   } state;
   using G = Group<I, E>;
-  using P = std::shared_ptr<G>;
+  using P = std::unique_ptr<G, DeleteGroup>;
 
   // Check for degeneracies (0 or 1 particle cases)
   if (first == last)
