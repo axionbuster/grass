@@ -1,5 +1,3 @@
-cmake_minimum_required(VERSION 3.27)
-
 # Gravity
 
 # Use WinMain() as entry point (if on Windows).
