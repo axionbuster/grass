@@ -147,7 +147,7 @@ struct User {
   };
 
   /// Get the rectangle (in world coordinates) that represents the window.
-  [[nodiscard]] ComplexRectangle window_world() const {
+  [[nodiscard]] ComplexRectangle window() const {
     auto w = float(GetScreenWidth()), h = float(GetScreenHeight());
     auto a = GetScreenToWorld2D({}, cam), b = GetScreenToWorld2D({w, h}, cam);
     return {{a.x, a.y}, {b.x, b.y}};

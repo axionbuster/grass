@@ -135,8 +135,8 @@ static int do_main() {
 
     // Draw all particles in the frame.
     BeginMode2D(user.cam);
-    for (auto window = user.window_world(); auto &&p : table)
-      if (auto c = p.circle(); dyn::disk_arrect_isct(c, window.ll, window.gg))
+    for (auto w = user.window(); auto &&p : table)
+      if (auto c = p.circle(); dyn::disk_arrect_isct(c, w.ll, w.gg))
         user.particle(c, WHITE);
     EndMode2D();
 
