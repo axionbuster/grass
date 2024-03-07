@@ -29,8 +29,8 @@ template <typename F = float> struct Circle : public std::complex<F> {
 /// @param ll The less-less corner of the rectangle.
 /// @param gg The greater-greater corner of the rectangle.
 template <typename F = float>
-constexpr bool origin_disk_arrect_isct(F radius, std::complex<F> const &ll,
-                                       std::complex<F> const &gg) noexcept {
+constexpr bool origin_disk_arrect_isct(F radius, std::complex<F> ll,
+                                       std::complex<F> gg) noexcept {
   // https://www.jeffreythompson.org/collision-detection/circle-rect.php
 
   std::complex<F> test;
@@ -54,9 +54,8 @@ constexpr bool origin_disk_arrect_isct(F radius, std::complex<F> const &ll,
 template <typename F = float>
 constexpr bool disk_arrect_isct(Circle<F> circ, std::complex<F> ll,
                                 std::complex<F> gg) noexcept {
-  // Translate the coordinate system so that the circle is at the origin.
-  ll -= circ, gg -= circ;
-  return origin_disk_arrect_isct(circ.radius, ll, gg);
+  // Translate the coordinate system so that the circle (circ) is at the origin.
+  return origin_disk_arrect_isct(circ.radius, ll - circ, gg - circ);
 }
 
 } // namespace dyn

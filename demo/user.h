@@ -1,14 +1,14 @@
-#include <cmath>
 #include <complex>
-#include <concepts>
-#include <cstdio>
+#include <iosfwd>
 #include <raylib.h>
-#include <sstream>
+#include <utility>
 
 /// User interface
 struct User {
+  /// Current camera (Raylib).
   Camera2D cam{};
-  float zoom0{};
+
+  /// Control over features.
   struct {
     bool fly : 1 {true};
     // If set, skip spawning in this frame when user asks to spawn a particle.
@@ -20,6 +20,8 @@ struct User {
     explicit operator bool() const { return fly; }
     [[nodiscard]] float target_dt() const { return 1.0f / float(target_fps); }
   } control;
+
+  /// Show options (for the HUD).
   struct {
     bool fps : 1 {};
     bool n_particles : 1 {};
@@ -39,6 +41,10 @@ struct User {
     }
   } show;
 
+  /// Original zoom level.
+  float zoom0{};
+
+  /// Construct a new instance.
   User() {
     auto w = float(GetScreenWidth()), h = float(GetScreenHeight()),
          z = std::min(w, h);
@@ -47,6 +53,7 @@ struct User {
     zoom0 = cam.zoom;
   }
 
+  /// Handle pan on input.
   void pan() {
     if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
       auto u = GetMouseDelta();
@@ -57,6 +64,7 @@ struct User {
     }
   }
 
+  /// Handle zoom on input.
   void zoom() {
     if (auto wheel = GetMouseWheelMove()) {
       auto u = GetMousePosition();
@@ -70,6 +78,7 @@ struct User {
     }
   }
 
+  /// Write text.
   void hud(int n_particles) const {
     // The standard library understands how to format a complex number, but,
     // understandably, knows nothing about Raylib's custom vector types.
@@ -92,22 +101,27 @@ struct User {
     DrawText(str.c_str(), 16, 16, 20, LIGHTGRAY);
   }
 
+  /// If SPACE is pressed, toggle flight.
   void adjust_fly() {
     if (IsKeyPressed(KEY_SPACE))
       control.fly = !control.fly;
   }
 
+  /// Draw a particle.
   void particle(auto p, auto color) const {
     DrawCircleV({p.real(), p.imag()}, p.radius, color);
   }
 
+  /// A rectangle with the less-less and greater-greater coordinates.
   struct ComplexRectangle {
+    /// Less-less (ll) and greater-greater (gg) coordinates.
     std::complex<float> ll, gg;
   };
 
+  /// Get the rectangle (in world coordinates) that represents the window.
   [[nodiscard]] ComplexRectangle window_world() const {
-    auto uv = std::complex{cam.offset.x, cam.offset.y} / cam.zoom;
-    auto target = std::complex{cam.target.x, cam.target.y};
-    return {-uv + target, uv + target};
+    auto w = float(GetScreenWidth()), h = float(GetScreenHeight());
+    auto a = GetScreenToWorld2D({}, cam), b = GetScreenToWorld2D({w, h}, cam);
+    return {{a.x, a.y}, {b.x, b.y}};
   }
 };

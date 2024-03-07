@@ -3,8 +3,6 @@
 #include <complex>
 #include <halton.h>
 #include <raylib.h>
-#include <sstream>
-#include <utility>
 #include <vector>
 
 #include "Table.h"
@@ -17,9 +15,7 @@ static int do_main() {
   auto constexpr PARTICLES_LIMIT = 5'000;
   auto constexpr RADIUS = 0.05f;
   auto constexpr MASS = 1.0f;
-  auto constexpr too_far = [](Particle &p) {
-    return std::abs(p.xy) > 5'000.0f;
-  };
+  auto constexpr too_far = [](auto &&p) { return std::abs(p.xy) > 5'000.0f; };
 
   // Quasi-random number generator; uniform distribution on (0, 1).
   // - Quality not so important.
@@ -39,16 +35,17 @@ static int do_main() {
     auto mass = MASS * std::exp(normal_variate());
     auto radius = RADIUS * std::exp(2.0f * normal_variate());
     // xy, v, m, r.
-    return Particle{{0}, {0}, mass, radius};
+    return Particle{{}, {}, mass, radius};
   };
 
   SetConfigFlags(FLAG_WINDOW_RESIZABLE);
   InitWindow(600, 600, "Basic 1,000 particle demo (click to add particles)");
 
+  // Helper for the user interface.
   User user;
 
   // The physical table (store particles, etc.); backup.
-  Table table, table0;
+  Table table;
 
   // In demo mode (default), user.show three particles in a figure-8 shape.
   {
@@ -68,7 +65,7 @@ static int do_main() {
   }
 
   // Initial version of the table (backup).
-  table0 = table;
+  auto table0{table};
 
   SetTargetFPS(user.control.target_fps);
 
