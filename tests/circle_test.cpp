@@ -14,7 +14,8 @@ protected:
 };
 
 TEST_F(CircleTest0, Disjoint0) {
-  ASSERT_FALSE(dyn::disk_arrect_isct(circle, less_less, greater_greater));
+  ASSERT_FALSE(
+      dyn::intersect::disk_rectangle(circle, less_less, greater_greater));
 }
 
 class CircleTest1 : public testing::Test {
@@ -25,7 +26,8 @@ protected:
 };
 
 TEST_F(CircleTest1, In0) {
-  ASSERT_TRUE(dyn::disk_arrect_isct(circle, less_less, greater_greater));
+  ASSERT_TRUE(
+      dyn::intersect::disk_rectangle(circle, less_less, greater_greater));
 }
 
 class CircleTest2 : public testing::Test {
@@ -35,7 +37,8 @@ protected:
 };
 
 TEST_F(CircleTest2, In0) {
-  ASSERT_TRUE(dyn::disk_arrect_isct(circle, less_less, greater_greater));
+  ASSERT_TRUE(
+      dyn::intersect::disk_rectangle(circle, less_less, greater_greater));
 }
 
 class CircleTest3 : public testing::Test {
@@ -45,8 +48,14 @@ protected:
       n{5.0f, 3.0f}, s{7.0f, 2.0f}, u{9.0f, 3.0f};
 };
 
-TEST_F(CircleTest3, In0) { ASSERT_TRUE(dyn::disk_arrect_isct(circle, c, e)); }
+TEST_F(CircleTest3, In0) {
+  ASSERT_TRUE(dyn::intersect::disk_rectangle(circle, c, e));
+}
 
-TEST_F(CircleTest3, In1) { ASSERT_TRUE(dyn::disk_arrect_isct(circle, l, n)); }
+TEST_F(CircleTest3, In1) {
+  ASSERT_TRUE(dyn::intersect::disk_rectangle(circle, l, n));
+}
 
-TEST_F(CircleTest3, Out0) { ASSERT_FALSE(dyn::disk_arrect_isct(circle, s, u)); }
+TEST_F(CircleTest3, Out0) {
+  ASSERT_FALSE(dyn::intersect::disk_rectangle(circle, s, u));
+}

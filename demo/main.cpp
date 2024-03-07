@@ -133,11 +133,11 @@ static int do_main() {
     BeginDrawing();
     ClearBackground(BLACK);
 
-    // Draw all particles in the frame.
+    // Draw all particles (p) visible in the window (w).
     BeginMode2D(user.cam);
     for (auto w = user.window(); auto &&p : table)
-      if (auto c = p.circle(); dyn::disk_arrect_isct(c, w.ll, w.gg))
-        user.particle(c, WHITE);
+      if (auto c = p.circle(); dyn::intersect::disk_rectangle(c, w.ll, w.gg))
+        user.particle(c);
     EndMode2D();
 
     // Compose text and show it.

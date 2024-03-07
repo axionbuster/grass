@@ -136,7 +136,7 @@ struct User {
   }
 
   /// Draw a particle.
-  void particle(auto p, auto color) const {
+  void particle(auto p, Color color = WHITE) const {
     DrawCircleV({p.real(), p.imag()}, p.radius, color);
   }
 
