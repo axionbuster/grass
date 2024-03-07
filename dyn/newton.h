@@ -27,7 +27,8 @@ template <typename F = float, unsigned short N_MONTE = 30> class Gravity {
   // evenly spaced set of points on the unit interval (0, 1); unlike the
   // uniform distribution, however, the points look "uniformly distributed"
   // (number of points being mostly proportional to length of any subset)
-  // even for a finite sample of points.
+  // even for a finite sample of points. As for the bases, use small prime
+  // numbers (here, 2 and 3).
   Halton<F, 2> h2;
   Halton<F, 3> h3;
 
@@ -41,7 +42,7 @@ public:
   /// @return A vector quantity of dimensions [M/L/L]. Divide it by the
   /// universal gravitational constant ("G") to get L/T/T.
   std::complex<F> field(Circle<F> c0, Circle<F> c1, F m1,
-                        F distance = F{-1.0}) const noexcept {
+                        F distance = F(-1)) const noexcept {
     // Use complex arithmetic to translate the coordinate system so that c0
     // appears to be at the origin, but let the respective radii be unaffected.
     c1 -= c0;
@@ -51,19 +52,19 @@ public:
          r = distance < F{0.0} ? std::abs(c1) : distance;
     if (!r)
       // Accidental overlap? Ignore the current frame.
-      return F(0);
-    auto t = F(1) / r;
-    if (s <= r)
+      return {};
+    if (s <= r) {
+      auto t = F(1) / r;
       // Disjoint? Use the usual law, treating these circles as point
       // particles whose masses are concentrated at the given centers.
       return t * t * t * m1 * c1;
-    else if (d <= r)
+    } else if (d <= r)
       // Intersecting?
       return when_intersecting(c0.radius, c1, m1);
     else
       // Or, does one circle fully contain the other? Then, apply the shell
       // theorem to get a net force of zero.
-      return F(0);
+      return {};
   }
 
   /// @brief Populate internal random disk (used for calculating forces in the
@@ -72,20 +73,19 @@ public:
   constexpr void refresh_disk() {
     // Fill `disk` with random points on unit disk centered about origin
     // by rejection sampling.
-    for (auto &&p : disk) {
-      do {
+    for (auto &&p : disk)
+      do
         // Scale and move (0,1) x (0,1) square to (-1,1) x (-1,1) square.
         p = F(2) * std::complex<F>{h2.x01(), h3.x01()} -
             std::complex<F>{F(1), F(1)};
-        // Use of `norm` makes this function constexpr (where `abs` or
-        // trigonometric functions are not allowed as of C++20).
-      } while (std::norm(p) >= F(1));
-    }
+      // Use of `norm` makes this function constexpr (where `abs` or
+      // trigonometric functions are not allowed as of C++20).
+      while (std::norm(p) >= F(1));
 
     // Attempt to improve branch prediction somewhat by sorting the points about
     // some axis (here, the real axis).
-    std::sort(disk.begin(), disk.end(),
-              [](auto p, auto q) { return p.real() < q.real(); });
+    std::ranges::sort(disk.begin(), disk.end(), {},
+                      [](auto &&p) { return p.real(); });
   }
 
 private:
@@ -103,20 +103,19 @@ private:
     // that body; (b) outside it, the force is as though its mass [m1] was
     // concentrated at the center of it [c1].
 
-    // Unweighted inverse-square summation (B).
-    std::complex<F> B;
+    // Unweighted inverse-square summation (b).
+    std::complex<F> b;
     for (auto &&p : disk) {
       auto q = c1 - r0 * p;
-      auto r = std::abs(q);
-      if (r > c1.radius) {
-        auto s = F(1) / r;
-        B += s * s * s * q;
-      }
+      auto rsq = std::norm(q);
+      if (c1.radius * c1.radius < rsq)
+        // rsq should neither be too small nor too large.
+        b += F(1) / rsq * (F(1) / std::sqrt(rsq)) * q;
     }
 
     // Converting constexpr integer N_MONTE to floating point constexpr is
     // helpful because it reduces burden due to type conversion on CPU.
-    return F(1) / F(N_MONTE) * m1 * B;
+    return F(1) / F(N_MONTE) * m1 * b;
   }
 };
 
