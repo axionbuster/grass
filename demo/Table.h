@@ -11,7 +11,6 @@
 #include <type_traits>
 #include <vector>
 #include <verlet.h>
-#include <yoshida.h>
 
 namespace phy {
 
