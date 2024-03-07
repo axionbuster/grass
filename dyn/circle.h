@@ -29,52 +29,33 @@ template <typename F = float> struct Circle : public std::complex<F> {
 /// @param ll The less-less corner of the rectangle.
 /// @param gg The greater-greater corner of the rectangle.
 template <typename F = float>
-bool origin_disk_arrect_isct(F radius, std::complex<F> const &ll,
-                             std::complex<F> const &gg) noexcept {
-  // sin(45 deg) [also cos(45 deg)].
-  constexpr auto sc45 = std::numbers::sqrt2_v<F> / F(2);
+constexpr bool origin_disk_arrect_isct(F radius, std::complex<F> ll,
+                                       std::complex<F> gg) noexcept {
+  // https://www.jeffreythompson.org/collision-detection/circle-rect.php
 
-  // Decide whether the given rectangle and a square centered at (0,0) having a
-  // "radius" (half side length) of `radius` (thus a full side length of twice
-  // the `radius`).
-  auto arrec_arsq_isct = [gg, ll](auto radius) {
-    return ll.real() < radius && -radius < gg.real() && ll.imag() < radius &&
-           -radius < gg.imag();
-  };
+  std::complex<F> test;
 
-  // The rectangle is touching the interior square of the circle.
-  if (arrec_arsq_isct(radius * sc45))
-    return true;
+  if (ll.real() > F(0))
+    test.real(ll.real());
+  else if (gg.real() < F(0))
+    test.real(gg.real());
 
-  // The rectangle is not touching the bounding square of the circle.
-  if (!arrec_arsq_isct(radius))
-    return false;
+  if (ll.imag() > F(0))
+    test.imag(ll.imag());
+  else if (gg.imag() < F(0))
+    test.imag(gg.imag());
 
-  // At least one of the four corners of the given rectangle is in the disk.
-  // (Usually less than 1% of the cases even reach here in the demo as of
-  // writing.)
-  if (std::abs(ll) < radius)
-    return true;
-  if (std::abs(gg) < radius)
-    return true;
-  if (std::abs(std::complex<F>{ll.real(), gg.imag()}) < radius)
-    return true;
-  if (std::abs(std::complex<F>{gg.real(), ll.imag()}) < radius)
-    return true;
-
-  // They aren't touching.
-  return false;
+  return std::norm(test) < radius * radius;
 }
 
 /// @brief Decide whether at least one intersection (point) exists between a
 /// circular disk and the area of a rectangle (degenerate cases are
 /// unspecified).
 template <typename F = float>
-bool disk_arrect_isct(Circle<F> circ, std::complex<F> ll,
-                      std::complex<F> gg) noexcept {
-  // Translate the coordinate system so that the circle is at the origin.
-  ll -= circ, gg -= circ;
-  return origin_disk_arrect_isct(circ.radius, ll, gg);
+constexpr bool disk_arrect_isct(Circle<F> circ, std::complex<F> ll,
+                                std::complex<F> gg) noexcept {
+  // Translate the coordinate system so that the circle (circ) is at the origin.
+  return origin_disk_arrect_isct(circ.radius, ll - circ, gg - circ);
 }
 
 } // namespace dyn
