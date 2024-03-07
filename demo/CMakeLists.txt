@@ -7,7 +7,8 @@ set(CMAKE_WIN32_EXECUTABLE TRUE)
 
 add_executable(grass main.cpp
         Table.h
-        irhall.h)
+        irhall.h
+        user.h)
 
 if (MSVC)
     target_compile_options(grass PRIVATE /W4)
