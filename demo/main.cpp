@@ -72,30 +72,23 @@ static int do_main() {
   while (!WindowShouldClose()) {
     float dt = user.control.target_dt();
 
-    // Reset the simulation (R).
-    if (IsKeyPressed(KEY_R))
-      goto reset_sim;
-
-    // Reset if in demo for long enough.
-    if (!user.control && GetTime() - user.control.last_sec >= 30.0f)
+    // Reset the simulation (R) or if in demo for long enough.
+    if (user.wants_reset() ||
+        (user.control.demo && user.elapsed_sec() >= 30.0f))
       goto reset_sim;
 
     // Particles too far from the origin will be removed.
     std::erase_if(table, too_far);
 
-    // Toggle debug options (T).
-    if (IsKeyPressed(KEY_T))
-      user.show.next();
-
-    user.adjust_fly(), user.pan(), user.zoom();
+    // General interactions.
+    user.rotate_debug_opts(), user.adjust_fly(), user.pan(), user.zoom();
 
     // Spawn particles when asked.
-    // Also, set user.control, and lower the gravitational constant.
-    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-      // Set user.control.
-      user.control.fly = true;
+    // Also, clear user.control.demo, and lower the gravitational constant.
+    if (auto xy = user.wants_spawn_particle(); xy.has_value()) {
+      user.control.demo = false;
 
-      // When user.control, lower the gravitational constant.
+      // When user controls, lower the gravitational constant.
       table.G = 0.015625f;
 
       // Make sure the mouse is moving quickly (pixels per frame).
@@ -112,12 +105,9 @@ static int do_main() {
       if (table.size() >= PARTICLES_LIMIT)
         table.erase(table.begin());
 
-      auto m = GetMousePosition();
-      auto n = GetScreenToWorld2D(m, user.cam);
-      auto o = std::complex<float>(n.x, n.y);
-      auto p = random_particle();
-      // Set location
-      p.xy = o;
+      // Spawn a random particle at the mouse location.
+      auto p = random_particle(); // Mass and radius only.
+      p.xy = xy.value();
       table.push_back(p);
 
       user.control.spawned_last_frame = true;
@@ -145,16 +135,13 @@ static int do_main() {
 
     // Draw all particles in the frame.
     BeginMode2D(user.cam);
-    {
-      auto window = user.window_world();
-      for (auto &&p : table)
-        if (auto c = p.circle(); dyn::disk_arrect_isct(c, window.ll, window.gg))
-          user.particle(c, WHITE);
-    }
+    for (auto window = user.window_world(); auto &&p : table)
+      if (auto c = p.circle(); dyn::disk_arrect_isct(c, window.ll, window.gg))
+        user.particle(c, WHITE);
     EndMode2D();
 
     // Compose text and show it.
-    user.hud(int(table.size()));
+    user.hud(table.size());
     EndDrawing();
     continue;
 

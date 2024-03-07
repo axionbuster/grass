@@ -1,5 +1,6 @@
 #include <complex>
 #include <iosfwd>
+#include <optional>
 #include <raylib.h>
 #include <utility>
 
@@ -11,13 +12,13 @@ struct User {
   /// Control over features.
   struct {
     bool fly : 1 {true};
+    bool demo : 1 {true};
     // If set, skip spawning in this frame when user asks to spawn a particle.
     bool spawned_last_frame : 1 {};
     // Target FPS.
     unsigned short target_fps{90};
     // Last time the simulation began or reset, seconds.
     double last_sec{GetTime()};
-    explicit operator bool() const { return fly; }
     [[nodiscard]] float target_dt() const { return 1.0f / float(target_fps); }
   } control;
 
@@ -53,6 +54,15 @@ struct User {
     zoom0 = cam.zoom;
   }
 
+  /// If R is pressed, the user wants to reset the simulation.
+  bool wants_reset() const { return IsKeyPressed(KEY_R); }
+
+  /// If T is pressed, show a different option.
+  void rotate_debug_opts() {
+    if (IsKeyPressed(KEY_T))
+      show.next();
+  }
+
   /// Handle pan on input.
   void pan() {
     if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
@@ -78,15 +88,33 @@ struct User {
     }
   }
 
+  /// Measure the time since last reset.
+  double elapsed_sec() const { return GetTime() - control.last_sec; }
+
+  /// Test whether the user wants to spawn a particle right now. If so, return
+  /// where (in world coordinates).
+  std::optional<std::complex<float>> wants_spawn_particle() const {
+    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT))
+      return mouse();
+    else
+      return {};
+  }
+
+  /// Return the mouse position in world coordinates.
+  std::complex<float> mouse() const {
+    auto a = GetScreenToWorld2D(GetMousePosition(), cam);
+    return {a.x, a.y};
+  }
+
   /// Write text.
-  void hud(int n_particles) const {
+  void hud(auto n_particles) const {
     // The standard library understands how to format a complex number, but,
     // understandably, knows nothing about Raylib's custom vector types.
     auto constexpr v2c = [](Vector2 v) {
       return std::complex<float>{v.x, v.y};
     };
     std::stringstream buf;
-    if (!control)
+    if (control.demo)
       buf << "(Demo; click anywhere to add particles.)\n";
     if (!show.any())
       buf << "R to reset; T for debug";
