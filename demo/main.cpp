@@ -47,8 +47,7 @@ struct Constants {
   }
 };
 
-template <typename... Args>
-static constexpr Table<Args...> figure8(Constants constants) {
+template <typename... Args> static constexpr Table<Args...> figure8() {
   Table table;
 
   // Make the mystical figure-8 shape below work at first.
@@ -61,12 +60,11 @@ static constexpr Table<Args...> figure8(Constants constants) {
       v0{0.4662036850f, 0.4323657300f}, v1{-0.93240737f, -0.86473146f};
 
   // Position, velocity, mass, radius
-  table.emplace_back(c0, v0, constants.LOG_MEAN_MASS,
-                     constants.LOG_MEAN_RADIUS);
-  table.emplace_back(.0f, v1, constants.LOG_MEAN_MASS,
-                     constants.LOG_MEAN_RADIUS);
-  table.emplace_back(-c0, v0, constants.LOG_MEAN_MASS,
-                     constants.LOG_MEAN_RADIUS);
+  // Make the radius small enough so that the Barnes-Hut tree approximation
+  // doesn't group them and break the figure-8 orbit.
+  table.emplace_back(c0, v0, 1.0f, 0.05f);
+  table.emplace_back(.0f, v1, 1.0f, 0.05f);
+  table.emplace_back(-c0, v0, 1.0f, 0.05f);
   return table;
 };
 
@@ -128,7 +126,7 @@ static int do_main() {
   auto user{user0};
 
   auto const make_table = [constants]() {
-    return constants.flags.galaxies ? galaxies(constants) : figure8(constants);
+    return constants.flags.galaxies ? galaxies(constants) : figure8();
   };
 
   // The physical table (store particles, etc.); backup.
