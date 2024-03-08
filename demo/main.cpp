@@ -118,7 +118,7 @@ static int do_main() {
   std::mt19937 rng{std::random_device{}()};
 
   SetConfigFlags(FLAG_WINDOW_RESIZABLE);
-  InitWindow(600, 600, "Basic 1,000 particle demo (click to add particles)");
+  InitWindow(600, 600, "Grass Gravity Simulation");
 
   // Helper for the user interface.
   User user0;
