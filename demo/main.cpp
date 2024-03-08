@@ -11,7 +11,6 @@
 
 #include "Table.h"
 #include "env.h"
-#include "irhall.h"
 #include "user.h"
 
 using namespace phy;

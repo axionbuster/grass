@@ -5,7 +5,6 @@ set(CMAKE_WIN32_EXECUTABLE TRUE)
 
 add_executable(grass main.cpp
         Table.h
-        irhall.h
         user.h)
 
 if (MSVC)
@@ -18,9 +17,7 @@ target_link_libraries(grass raylib)
 target_link_libraries(grass dyn)
 
 # Header file too big; use precompiled header.
-target_precompile_headers(grass INTERFACE <raylib.h>
-        <algorithm> <cfenv> <cmath> <complex> <sstream> <vector>
-        <array>)
+target_precompile_headers(grass INTERFACE <complex>)
 
 if (APPLE)
     target_link_libraries(grass "-framework IOKit")
