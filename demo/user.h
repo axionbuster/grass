@@ -1,3 +1,6 @@
+#ifndef GRASS_USER_H
+#define GRASS_USER_H
+
 #include <complex>
 #include <iosfwd>
 #include <optional>
@@ -153,3 +156,5 @@ struct User {
     return {{a.x, a.y}, {b.x, b.y}};
   }
 };
+
+#endif /* GRASS_USER_H */
