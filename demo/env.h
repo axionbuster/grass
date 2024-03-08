@@ -9,7 +9,7 @@
 namespace env {
 
 std::optional<std::string> get(std::string_view sv) {
-  if (auto s = std::getenv(sv.begin()))
+  if (auto s = std::getenv(sv.cbegin()))
     return s;
   else
     return {};
