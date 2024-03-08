@@ -64,17 +64,23 @@ template <typename Integrator = dyn::Verlet<float>>
 requires IntegratorType<Integrator, float>
 class Table : public std::vector<Particle> {
   /// @brief Gravitational interaction.
-  dyn::Gravity<> gr;
+  dyn::Gravity<> gravity;
 
   /// "Extra data" stored for a Barnes-Hut tree node. A circle.
-  struct Physicals {
+  template <class I> struct Physicals {
     /// Center [L].
     std::complex<float> xy;
 
     /// Radius [L] and mass [M].
     float radius{}, mass{};
 
-    // Three required member functions (by `dyn::bh32::tree`):
+    /// First particle.
+    I first;
+
+    /// Has many particles?
+    bool many{};
+
+    // Three required member functions (by `dyn::bh32::Group`):
     //  1. No-argument constructor.
     //  2. Constructor given a range of particles.
     //  3. Merger function using (+=).
@@ -82,12 +88,16 @@ class Table : public std::vector<Particle> {
     Physicals() = default;
 
     /// Given a range of particles (with an `xy` field), compute the quantities.
-    template <class I> Physicals(I const first, I const last) {
+    Physicals(I const first, I const last) : first{first} {
       std::complex<double> xyd;
+      unsigned char count{}; // (Only used to decide many particles vs. single.)
       for (auto i = first; i != last; ++i) {
         mass += i->mass;
         xyd += double(i->mass) * std::complex<double>{i->xy};
+        count = std::min(count + 1, 2);
       }
+      assert(count);
+      many = count > 1;
       xy = std::complex<float>{xyd / double(mass)};
       for (auto i = first; i != last; ++i)
         radius = std::max(radius, i->radius + std::abs(i->xy - xy));
@@ -97,31 +107,45 @@ class Table : public std::vector<Particle> {
     Physicals &operator+=(Physicals const &p) {
       if (this == &p)
         // Cannot violate const contract.
-        return mass += mass, *this;
+        return mass *= 2.0f, *this;
       // Compute the new average xy.
       auto sum = mass + p.mass;
       xy = mass / sum * xy + p.mass / sum * p.xy;
       // The rest.
       mass += p.mass;
       radius = std::max(radius, p.radius + std::abs(p.xy - xy));
+      // No need to update `first`:
+      // Assume that mergers come "in order."
       return *this;
     }
+
+    /// Non-required method to create a `Circle` instance.
+    [[nodiscard]] dyn::Circle<float> circle() const { return {xy, radius}; }
   };
 
   /// @brief Given a Barnes-Hut tree and a circle that represents a particle,
   /// compute the acceleration onto the particle due to the data in the tree.
-  std::complex<float> accelerate(auto &&tree, dyn::Circle<> circle) {
+  std::complex<float> accelerate(auto &&tree, dyn::Circle<> circle, auto i) {
     std::complex<float> a{};
-    tree->depth_first([this, &a, &circle](auto &&group) {
+    tree->depth_first([this, circle, i, &a](auto &&group) {
       auto const TRUNCATE = false;
-      if (group.xy == circle)
+      auto const square = [](auto x) { return x * x; };
+      if (!group.many && group.first == i)
+        // Exclude self-interactions.
         return TRUNCATE;
-      auto square = [](auto x) { return x * x; };
       auto norm = std::norm(group.xy - circle), rsq = square(group.radius);
-      if (norm < rsq || square(tan_angle_threshold) < rsq / norm)
+      // If a non-singular group either:
+      //  - contains the center of `circle` inside said group's circle, or
+      //  - the (underapproximated) view angle is too wide, then
+      // resolve more detail.
+      if (group.many &&
+          (norm < rsq || square(tan_angle_threshold) < rsq / norm))
         return !TRUNCATE;
-      a += gr.field(circle, {group.xy, group.radius}, G * group.mass,
-                    std::sqrt(norm));
+      // Compute the acceleration due to the group.
+      // Also, insert the value of G, the universal gravitational constant, in a
+      // way that doesn't stress the single-precision dynamic range.
+      a += gravity.field(circle, group.circle(), G * group.mass,
+                         std::sqrt(norm));
       return TRUNCATE;
     });
     return a;
@@ -152,23 +176,25 @@ public:
         return {};
     };
     // Compute the Barnes-Hut tree over the particles this has.
-    auto const tree = bh::tree<Physicals>(begin(), end(), morton_masked);
+    auto const tree =
+        bh::tree<Physicals<decltype(begin())>>(begin(), end(), morton_masked);
 
     // Iterate over the particles, summing up their forces.
-    for (auto &&p : *this) {
+    for (auto i = begin(); i != end(); ++i) {
+      auto &&p = *i;
       // Supposing that particle p is located instead at the position xy below,
       // what is the acceleration experienced by p due to all the other
       // particles or approximations (g)?
-      auto i = Integrator{p.xy, p.v};
-      i.step(dt, [this, &tree, &p](auto xy) {
-        return this->accelerate(tree, {xy, p.radius});
+      auto ig = Integrator{p.xy, p.v};
+      ig.step(dt, [this, &tree, &p, &i](auto xy) {
+        return this->accelerate(tree, {xy, p.radius}, i);
       });
-      p.xy = i.y0, p.v = i.y1;
+      p.xy = ig.y0, p.v = ig.y1;
     }
   }
 
   /// @brief Refresh the "disk" used for parts of the calculation.
-  void refresh_disk() noexcept { gr.refresh_disk(); }
+  void refresh_disk() noexcept { gravity.refresh_disk(); }
 
   /// @brief Test whether the simulation is in "good state."
   bool good() noexcept {
