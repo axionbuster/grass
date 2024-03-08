@@ -101,8 +101,8 @@ static Table<Args...> galaxies(Constants constants) {
     auto dot = [](auto a, auto b) -> std::complex<float> {
       return {a.real() * b.real(), a.imag() * b.imag()};
     };
-    auto pan = d.normal_xy(rng) * 4.0f;
-    auto spin = std::polar(4.0f, d.angle(rng));
+    auto pan = d.normal_xy(rng) * 3.0f;
+    auto spin = std::polar(3.0f, d.angle(rng));
     // Make an ellipse.
     for (auto i = first; i < table.size(); i++)
       table[i].xy = (dot(d.normal_xy(rng), ellipse) / 2.0f + pan) * spin;
