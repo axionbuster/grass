@@ -135,9 +135,13 @@ static int do_main() {
   InitWindow(600, 600, "Grass Gravity Simulation");
 
   // Helper for the user interface.
-  User user0;
-  user0.control.demo = !constants.flags.galaxies;
-  auto user{user0};
+  auto const make_user = [constants]() {
+    User u;
+    if (constants.flags.galaxies)
+      u.control.demo = false;
+    return u;
+  };
+  auto user = make_user();
 
   auto const make_table = [constants]() {
     return constants.flags.galaxies ? galaxies(constants) : figure8();
@@ -225,7 +229,7 @@ static int do_main() {
     continue;
 
   reset_sim:
-    user = user0;
+    user = make_user();
     table = make_table();
 
     // (Do this or else hang.)
