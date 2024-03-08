@@ -1,10 +1,6 @@
 #ifndef GRASS_BARNES_HUT_H
 #define GRASS_BARNES_HUT_H
 
-#ifndef NDEBUG
-#include <vector>
-#endif
-
 #include <array>
 #include <cassert>
 #include <complex>
@@ -12,8 +8,7 @@
 #include <deque>
 #include <memory>
 #include <optional>
-#include <queue>
-#include <stack>
+#include <vector>
 
 namespace dyn::bh32 {
 
@@ -101,12 +96,19 @@ private:
   Group(Group const &g) = delete;
   Group &operator=(Group const &g) = delete;
 
+  // Three requirements on the E type:
+  //  1. Default initialization.
+  //  2. Construction given a non-empty range of particles.
+  //  3. Ordered merger `a += b` where `a` and `b` are E objects
+  //  and where the `first` object used to construct `a` is
+  //  ordered in memory before the `first` object used to construct `b`.
+
   Group(I const first, I const last) noexcept
       : first{first}, last{last}, extra{first, last} {}
 
 #ifndef NDEBUG
   [[maybe_unused]] [[nodiscard]] size_t debug_tally_leaves() const noexcept {
-    std::stack<Group const *> v;
+    std::vector<Group const *> v;
     v.push(this);
     size_t tally{};
     while (!v.empty()) {
@@ -123,13 +125,14 @@ private:
 
   void depth_first_delete() noexcept {
     assert(!this->sibling);
-    std::stack<Group *> v;
-    v.push(this);
+    std::vector<Group *> v;
+    v.reserve(113); // Some good enough prime number.
+    v.push_back(this);
     while (!v.empty()) {
-      auto h = v.top();
-      v.pop();
+      auto h = v.back();
+      v.pop_back();
       for (auto a = h->child; a; a = a->sibling)
-        v.push(a);
+        v.push_back(a);
       delete h;
     }
   }
@@ -139,14 +142,15 @@ public:
   /// go deeper.
   void depth_first(auto &&deeper) const {
     assert(!this->sibling);
-    std::stack<Group const *> v;
-    v.push(this);
+    std::vector<Group const *> v;
+    v.reserve(113); // Some good enough prime number.
+    v.push_back(this);
     while (!v.empty()) {
-      auto h = v.top();
-      v.pop();
+      auto h = v.back();
+      v.pop_back();
       if (deeper(h->extra))
         for (auto a = h->child; a; a = a->sibling)
-          v.push(a);
+          v.push_back(a);
     }
   }
 };

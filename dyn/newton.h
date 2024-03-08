@@ -49,7 +49,7 @@ public:
 
     // Are the circles...
     auto s = c1.radius + c0.radius, d = std::abs(c1.radius - c0.radius),
-         r = distance < F{0.0} ? std::abs(c1) : distance;
+         r = distance < F{} ? std::abs(c1) : distance;
     if (!r)
       // Accidental overlap? Ignore the current frame.
       return {};
