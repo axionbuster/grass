@@ -4,20 +4,11 @@
 #include <cstdlib>
 #include <optional>
 #include <string>
-#include <string_view>
 
 namespace env {
 
 std::optional<std::string> get(char const *sv) {
-#ifndef _WIN32
-  // On non-Windows platforms, s may exist as an empty character if the
-  // environment variable exists but the value is empty. In this case, the first
-  // branch below is taken.
-  if (char const *s = std::getenv(sv))
-    return s;
-  else
-    return {};
-#else
+#ifdef _WIN32
   char *s;
   size_t n;
   // On Windows, _dupenv_s is the Microsoft-recommended way of reading an
@@ -29,6 +20,14 @@ std::optional<std::string> get(char const *sv) {
   // According to Microsoft, the buffer s must be freed using a call to `free`.
   std::free(s);
   return t;
+#else
+  // On non-Windows platforms, s may exist as an empty character if the
+  // environment variable exists but the value is empty. In this case, the first
+  // branch below is taken.
+  if (char const *s = std::getenv(sv))
+    return s;
+  else
+    return {};
 #endif
 }
 

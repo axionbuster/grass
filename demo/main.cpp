@@ -127,7 +127,7 @@ static int do_main() {
   user0.control.demo = !constants.flags.galaxies;
   auto user{user0};
 
-  auto const make_table = [&constants]() {
+  auto const make_table = [constants]() {
     return constants.flags.galaxies ? galaxies(constants) : figure8(constants);
   };
 
