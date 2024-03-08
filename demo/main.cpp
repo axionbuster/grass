@@ -85,7 +85,7 @@ static Table<Args...> galaxies(Constants constants) {
     [[nodiscard]] std::complex<float> normal_xy(std::mt19937 &rng) {
       return {norm(rng), norm(rng)};
     }
-  } d{.number{std::log(std::sqrt(float(L)))}};
+  } d{.number{lognormal{std::log(std::sqrt(float(L)))}}};
 
   Table table;
   table.G = constants.G;
