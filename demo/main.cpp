@@ -1,9 +1,12 @@
 #include <circle.h>
 #include <cmath>
 #include <complex>
+#include <cstdlib>
 #include <halton.h>
 #include <random>
 #include <raylib.h>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "Table.h"
@@ -112,6 +115,17 @@ static int do_main() {
   auto const constants = []() {
     Constants c;
     c.flags.galaxies = env::get("GRASS_GALAXIES").has_value();
+    if (auto s = env::get("GRASS_PARTICLES_LIMIT"); s.has_value()) {
+      try {
+        auto n = size_t(std::stoul(s.value()));
+        if (n)
+          c.PARTICLES_LIMIT = std::min(n, size_t(10'000));
+      } catch (const std::invalid_argument &) {
+        // Do nothing
+      } catch (const std::out_of_range &) {
+        // Do nothing
+      }
+    }
     return c;
   }();
 
