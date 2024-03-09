@@ -1,7 +1,9 @@
 # The main demo (including "galaxies" mode)
 
-![Galaxies Mode](galaxies.png)
 Screenshot: Galaxies Mode
+![Galaxies Mode](galaxies.png)
+
+## How to build and run
 
 1. Build using CMake.
 2. If desired, enable "galaxies" mode by running the binary with the environment variable
