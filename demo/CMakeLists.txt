@@ -24,3 +24,7 @@ if (APPLE)
     target_link_libraries(grass "-framework Cocoa")
     target_link_libraries(grass "-framework OpenGL")
 endif ()
+
+if (EMSCRIPTEN)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --shell-file ${CMAKE_SOURCE_DIR}/demo/shell.html")
+endif ()

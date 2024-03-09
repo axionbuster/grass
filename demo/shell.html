@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en-us">
+
+<head>
+    <meta charset="utf-8">
+    <!-- Modification of stock HTML frontend from Emscripten -->
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>Emscripten-Generated Code</title>
+    <style>
+        body {
+            margin: 0;
+            padding: none;
+        }
+
+        .emscripten {
+            padding-right: 0;
+            margin-left: auto;
+            margin-right: auto;
+            display: block;
+        }
+
+        div.emscripten {
+            text-align: center;
+        }
+
+        div.emscripten_border {
+            border: 0;
+        }
+
+        /* the canvas *must not* have any border or padding, or mouse coords will be wrong */
+        canvas.emscripten {
+            border: 0 none;
+            background-color: black;
+        }
+
+        @-webkit-keyframes rotation {
+            from {
+                -webkit-transform: rotate(0deg);
+            }
+
+            to {
+                -webkit-transform: rotate(360deg);
+            }
+        }
+
+        @-moz-keyframes rotation {
+            from {
+                -moz-transform: rotate(0deg);
+            }
+
+            to {
+                -moz-transform: rotate(360deg);
+            }
+        }
+
+        @-o-keyframes rotation {
+            from {
+                -o-transform: rotate(0deg);
+            }
+
+            to {
+                -o-transform: rotate(360deg);
+            }
+        }
+
+        @keyframes rotation {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="emscripten_border">
+        <canvas class="emscripten" id="canvas" tabindex="-1"></canvas>
+    </div>
+
+    <script>
+        window.addEventListener("error", (event) => {
+            console.error("error", event);
+            // Refresh after one second upon first error.
+            if (!refreshTimer) refreshTimer = setTimeout(() => location.reload(), 1000);
+            e.preventDefault();
+        });
+        var canvas = document.getElementById("canvas");
+        canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+        canvas.addEventListener("webglcontextlost", (e) => { alert("WebGL context lost. You will need to reload the page."); e.preventDefault(); }, false);
+        // Other code assumes that this global variable (Module) exists with the key canvas in it.
+        var Module = { canvas };
+        var refreshTimer = null;
+    </script>
+    {{{ SCRIPT }}}
+</body>
+
+</html>
