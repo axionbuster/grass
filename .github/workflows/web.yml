@@ -62,7 +62,9 @@ jobs:
         run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --target grass --config Release
       - name: Clean up
         working-directory: "${{ steps.strings.outputs.build-output-dir }}/demo"
-        run: rm -rf CMakeFiles cmake_install
+        run: |
+          rm -rf CMakeFiles cmake_install
+          mv grass.html index.html
       - name: Emit artifacts
         uses: actions/upload-pages-artifact@v3
         with:
