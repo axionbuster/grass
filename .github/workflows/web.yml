@@ -45,9 +45,15 @@ jobs:
           sudo ./llvm.sh 17
           # Raylib
           sudo apt install libasound2-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libglu1-mesa-dev libxcursor-dev libxinerama-dev
+          # Emscripten
+          git clone https://github.com/emscripten-core/emsdk.git
+          cd emsdk
+          ./emsdk install latest
+          ./emsdk activate latest
+          source ./emsdk_env.sh
       - name: Configure CMake for Web
         run: >
-          cmake -B ${{ steps.strings.outputs.build-output-dir }}
+          emcmake cmake -B ${{ steps.strings.outputs.build-output-dir }}
           -DCMAKE_CXX_COMPILER=clang++-17
           -DCMAKE_C_COMPILER=clang-17
           -DCMAKE_BUILD_TYPE=Release
