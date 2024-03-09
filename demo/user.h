@@ -30,18 +30,14 @@ struct User {
     bool fps : 1 {};
     bool n_particles : 1 {};
     bool cam : 1 {};
-    // Decide whether any flag is set.
-    [[nodiscard]] constexpr bool any() const {
-      return fps || n_particles || cam;
-    }
     // Rotate to the next option.
     constexpr void next() {
       if (!fps)
-        fps = n_particles = cam = true;
-      else if (!cam)
-        fps = n_particles = cam = false;
-      else
         fps = n_particles = true, cam = false;
+      else if (!cam)
+        fps = n_particles = cam = true;
+      else
+        fps = n_particles = cam = false;
     }
   } show;
 
@@ -110,25 +106,28 @@ struct User {
   }
 
   /// Write text.
-  void hud(auto n_particles) const {
+  void hud(auto n_particles, auto n_limit) const {
     // The standard library understands how to format a complex number, but,
     // understandably, knows nothing about Raylib's custom vector types.
     auto constexpr v2c = [](Vector2 v) {
       return std::complex<float>{v.x, v.y};
     };
     std::stringstream buf;
+    buf << "\"Grass\" gravity simulation\n\n";
     if (control.demo)
-      buf << "(Demo; click anywhere to add particles.)\n";
-    if (!show.any())
-      buf << "R to reset; T for debug";
+      buf << "(Demo; click anywhere to add particles)\n";
+    buf << "R to reset; T to debug; SPACE to pause\n"
+           "Left-click to add a particle; right-click to pan\n"
+           "Use the mouse wheel to zoom in and out\n\n";
     if (show.fps)
       buf << "FPS: " << GetFPS() << '\n';
     if (show.n_particles)
-      buf << "N: " << n_particles << '\n';
+      buf << "N: " << n_particles << '\n' << "N (limit): " << n_limit << '\n';
     if (show.cam)
       buf << "Zoom: " << cam.zoom << "\nTarget: " << v2c(cam.target)
           << "\nOffset: " << v2c(cam.offset) << '\n';
     auto str = buf.str();
+    DrawText(str.c_str(), 18, 18, 20, BLACK);
     DrawText(str.c_str(), 16, 16, 20, LIGHTGRAY);
   }
 

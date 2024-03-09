@@ -79,7 +79,8 @@ static Table<Args...> galaxies(Constants constants) {
   using normal = std::normal_distribution<float>;
   using uniform = std::uniform_real_distribution<float>;
 
-  auto const L = constants.PARTICLES_LIMIT;
+  auto const div_ceil = [](auto a, auto b) { return a / b + !!(a % b); };
+  auto const L = div_ceil(constants.PARTICLES_LIMIT, size_t(5));
   std::mt19937 rng{std::random_device{}()};
   struct {
     lognormal axes{-0.5f, 0.5f}, number{}, radial{};
@@ -160,8 +161,11 @@ struct State {
       p.xy = xy.value();
       table.push_back(p);
 
-      if (table.size() > constants.PARTICLES_LIMIT)
-        table.erase(table.begin());
+      // If too many particles, remove a random particle.
+      if (table.size() > constants.PARTICLES_LIMIT) {
+        std::uniform_int_distribution<size_t> d{0, table.size()};
+        table.erase(table.begin() + d(rng));
+      }
 
       user.control.spawned_last_frame = true;
     } else {
@@ -194,7 +198,7 @@ struct State {
     EndMode2D();
 
     // Compose text and show it.
-    user.hud(table.size());
+    user.hud(table.size(), constants.PARTICLES_LIMIT);
     EndDrawing();
     return;
 
@@ -227,7 +231,7 @@ static int do_main() {
 
 #if defined(PLATFORM_WEB)
   state.constants.flags.galaxies = true;
-  state.constants.PARTICLES_LIMIT = 150;
+  state.constants.PARTICLES_LIMIT = 750;
   state.user = state.make_user();
   state.table = state.make_table();
   emscripten_set_main_loop(do_loop, 0, 1);
