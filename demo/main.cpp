@@ -8,6 +8,9 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#if defined(PLATFORM_WEB)
+#include <emscripten/emscripten.h>
+#endif
 
 #include "Table.h"
 #include "env.h"
@@ -102,7 +105,9 @@ static Table<Args...> galaxies(Constants constants) {
       return {a.real() * b.real(), a.imag() * b.imag()};
     };
     auto pan = d.normal_xy(rng) * 3.0f;
-    auto spin = std::polar(3.0f, d.angle(rng));
+    // Line through (100, 1) and (2500, 3) [N, curve].
+    auto curve = 11.0f / 12.0f + N / 1200.0f;
+    auto spin = std::polar(curve, d.angle(rng));
     // Make an ellipse.
     for (auto i = first; i < table.size(); i++)
       table[i].xy = (dot(d.normal_xy(rng), ellipse) / 2.0f + pan) * spin;
@@ -110,48 +115,15 @@ static Table<Args...> galaxies(Constants constants) {
   return table;
 }
 
-static int do_main() {
-  auto const constants = []() {
-    Constants c;
-    c.flags.galaxies = env::get("GRASS_GALAXIES").has_value();
-    if (auto s = env::get("GRASS_PARTICLES_LIMIT"); s.has_value()) {
-      try {
-        auto n = size_t(std::stoul(s.value()));
-        if (n)
-          c.PARTICLES_LIMIT = std::min(n, size_t(10'000));
-      } catch (const std::invalid_argument &) {
-        // Do nothing
-      } catch (const std::out_of_range &) {
-        // Do nothing
-      }
-    }
-    return c;
-  }();
-
+struct State {
   std::mt19937 rng{std::random_device{}()};
+  Constants constants;
+  Table<> table;
+  User user;
 
-  SetConfigFlags(FLAG_WINDOW_RESIZABLE);
-  InitWindow(600, 600, "Grass Gravity Simulation");
+  State() : constants{}, table{make_table()}, user{make_user()} {}
 
-  // Helper for the user interface.
-  auto const make_user = [constants]() {
-    User u;
-    if (constants.flags.galaxies)
-      u.control.demo = false;
-    return u;
-  };
-  auto user = make_user();
-
-  auto const make_table = [constants]() {
-    return constants.flags.galaxies ? galaxies(constants) : figure8();
-  };
-
-  // The physical table (store particles, etc.); backup.
-  Table table = make_table();
-
-  SetTargetFPS(user.control.target_fps);
-
-  while (!WindowShouldClose()) {
+  void loop() {
     float dt = user.control.target_dt();
 
     // Reset the simulation (R) or if in demo for long enough.
@@ -160,8 +132,7 @@ static int do_main() {
       goto reset_sim;
 
     // Particles too far from the origin will be removed.
-    std::erase_if(table,
-                  [&constants](auto &&p) { return constants.too_far(p.xy); });
+    std::erase_if(table, [this](auto &&p) { return constants.too_far(p.xy); });
 
     // General interactions.
     user.rotate_debug_opts(), user.adjust_fly(), user.pan(), user.zoom();
@@ -225,7 +196,7 @@ static int do_main() {
     // Compose text and show it.
     user.hud(table.size());
     EndDrawing();
-    continue;
+    return;
 
   reset_sim:
     user = make_user();
@@ -235,7 +206,54 @@ static int do_main() {
     BeginDrawing();
     EndDrawing();
   }
+
+  User make_user() {
+    User u;
+    if (constants.flags.galaxies)
+      u.control.demo = false;
+    return u;
+  }
+
+  Table<> make_table() {
+    return constants.flags.galaxies ? galaxies(constants) : figure8();
+  }
+} state;
+
+void do_loop() { state.loop(); }
+
+static int do_main() {
+  SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+  InitWindow(600, 600, "Grass Gravity Simulation");
+
+#if defined(PLATFORM_WEB)
+  state.constants.flags.galaxies = true;
+  state.constants.PARTICLES_LIMIT = 150;
+  state.user = state.make_user();
+  state.table = state.make_table();
+  emscripten_set_main_loop(do_loop, 0, 1);
+#else
+  state.constants = []() {
+    Constants c;
+    c.flags.galaxies = env::get("GRASS_GALAXIES").has_value();
+    if (auto s = env::get("GRASS_PARTICLES_LIMIT"); s.has_value()) {
+      try {
+        auto n = size_t(std::stoul(s.value()));
+        if (n)
+          c.PARTICLES_LIMIT = std::min(n, size_t(10'000));
+      } catch (const std::invalid_argument &) {
+        // Do nothing
+      } catch (const std::out_of_range &) {
+        // Do nothing
+      }
+    }
+    return c;
+  }();
+  SetTargetFPS(state.user.control.target_fps);
+  while (!WindowShouldClose()) {
+    do_loop();
+  }
   CloseWindow();
+#endif
   return 0;
 }
 
