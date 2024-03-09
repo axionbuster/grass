@@ -38,7 +38,6 @@ jobs:
           echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
       - name: Instal build dependencies
         run: |
-          sudo apt-get update
           # LLVM 17
           wget https://apt.llvm.org/llvm.sh
           chmod u+x ./llvm.sh
@@ -50,14 +49,14 @@ jobs:
           cd emsdk
           ./emsdk install latest
           ./emsdk activate latest
-          source ./emsdk_env.sh
       - name: Configure CMake for Web
-        run: >
-          emcmake cmake -B ${{ steps.strings.outputs.build-output-dir }}
-          -DCMAKE_CXX_COMPILER=clang++-17
-          -DCMAKE_C_COMPILER=clang-17
-          -DCMAKE_BUILD_TYPE=Release
-          -DPLATFORM=Web
+        run: |
+          source "/home/runner/work/grass/grass/emsdk/emsdk_env.sh"
+          emcmake cmake -B ${{ steps.strings.outputs.build-output-dir }} \
+          -DCMAKE_CXX_COMPILER=clang++-17 \
+          -DCMAKE_C_COMPILER=clang-17 \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DPLATFORM=Web \
           -S ${{ github.workspace }}
       - name: Build
         run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config Release
