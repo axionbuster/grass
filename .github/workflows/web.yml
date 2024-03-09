@@ -58,8 +58,8 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release \
           -DPLATFORM=Web \
           -S ${{ github.workspace }}
-      - name: Build
-        run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config Release
+      - name: Build project grass
+        run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --target grass --config Release
       - name: Clean up
         working-directory: "${{ steps.strings.outputs.build-output-dir }}/demo"
         run: rm -rf CMakeFiles cmake_install
