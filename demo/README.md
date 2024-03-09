@@ -47,3 +47,21 @@ cmake --build build --target grass # --config RelWithDebInfo
 # Serve.
 python3 -m http.server 8080
 ```
+
+### Disable Microsoft Edge's "Enhanced Security"
+
+By default, on non-HTTPS connections, Edge's "enhanced security" blocks JIT
+compilation of WASM code, which can hamper the performance.
+
+If using Edge, go to Settings &lt; Privacy, search, and services &lt;
+and then click "Manage enhanced security for sites," and then excempt
+`localhost:8080` (or the relevant local host URL) from the protection.
+The screenshots below show how graphically.
+
+When publishing the demo online, use a host that uses HTTPS connections.
+
+(Screenshot: Go to Privacy, search, and services)
+![Step 1. Go to Privacy, search, and services](disarm0.png)
+
+(Screenshot: Add localhost:8080 as an exception)
+![Step 2. Add localhost:8080 as an exception](disarm1.png)
