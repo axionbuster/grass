@@ -88,7 +88,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: >
           sudo apt install libasound2-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libglu1-mesa-dev
-          libxcursor-dev libxinerama-dev libomp-dev
+          libxcursor-dev libxinerama-dev libomp-15-dev
 
       - name: Install Clang 17 (macOS)
         if: matrix.os == 'macos-latest'
