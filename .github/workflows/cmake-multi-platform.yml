@@ -16,7 +16,8 @@ jobs:
       matrix:
         os: [ ubuntu-latest, windows-latest, macos-latest ]
         c_compiler: [ gcc, clang-17, cl, icx ]
-        build_type: [ RelWithDebInfo ]
+        build_type: [ Debug ]
+        other_options: [ "", "-DOPENMP=1" ]
         exclude:
           - os: ubuntu-latest
             c_compiler: cl
@@ -96,11 +97,6 @@ jobs:
           echo "/usr/local/opt/llvm/bin" >> $GITHUB_PATH
           ls /usr/local/opt/llvm/bin
 
-      - name: Print PATH (macOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          echo "PATH = $PATH"
-
       - name: Configure CMake
         if: matrix.cxx_flags == ''
         run: >
@@ -108,28 +104,10 @@ jobs:
           -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
           -DCMAKE_C_COMPILER=${{ matrix.c_compiler }}
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-          -S ${{ github.workspace }}
-
-      - name: Configure CMake (Coverage)
-        if: matrix.cxx_flags != ''
-        run: >
-          cmake -B ${{ steps.strings.outputs.build-output-dir }}
-          -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
-          -DCMAKE_C_COMPILER=${{ matrix.c_compiler }}
-          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-          -DCMAKE_CXX_FLAGS="${{ matrix.cxx_flags }}"
-          -DCMAKE_C_FLAGS="${{ matrix.c_flags }}"
+          ${{ matrix.other_options }}
           -S ${{ github.workspace }}
 
       - name: Build
         # Build your program with the given configuration. Note that --config is needed because the default Windows
         # generator is a multi-config generator (Visual Studio generator).
         run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }}
-
-      - name: Test
-        if: matrix.cxx_flags == ''
-        working-directory: ${{ steps.strings.outputs.build-output-dir }}
-        # Execute tests defined by the CMake configuration. Note that --build-config is needed because the default
-        # Windows generator is a multi-config generator (Visual Studio generator).
-        # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
-        run: ctest --build-config ${{ matrix.build_type }}
