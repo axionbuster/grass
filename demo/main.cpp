@@ -237,7 +237,7 @@ static int do_main() {
 
 #if defined(PLATFORM_WEB)
   state.constants.flags.galaxies = true;
-  state.constants.PARTICLES_LIMIT = 750;
+  state.constants.PARTICLES_LIMIT = 2500;
   state.user = state.make_user();
   state.table = state.make_table();
   emscripten_set_main_loop(do_loop, 0, 1);
