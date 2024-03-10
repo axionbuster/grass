@@ -43,7 +43,7 @@ jobs:
         working-directory: "${{ steps.strings.outputs.build-output-dir }}"
         run: ctest
       - name: Apply Gcovr
-        run: gcovr --coveralls > coveralls.json
+        run: gcovr --coveralls > coverage.json
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v3
         env:
