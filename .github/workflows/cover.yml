@@ -40,6 +40,8 @@ jobs:
       - name: Run the unit tests
         working-directory: "${{ steps.strings.outputs.build-output-dir }}"
         run: ctest
+      - name: Apply Gcovr
+        run: gcovr --coveralls > coveralls.json
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v3
         env:
