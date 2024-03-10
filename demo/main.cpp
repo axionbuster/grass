@@ -56,7 +56,7 @@ struct Constants {
 };
 
 template <typename... Args> static constexpr Table<Args...> figure8() {
-  Table table;
+  Table<Args...> table;
 
   // Make the mystical figure-8 shape below work at first.
   // (This G value is too large in most cases, so I will lower it once the
