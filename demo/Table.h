@@ -184,14 +184,18 @@ public:
         bh::tree<Physicals<decltype(begin())>>(begin(), end(), morton_masked);
 
     // Iterate over the particles, summing up their forces.
-    for (auto i = begin(); i != end(); ++i) {
-      auto &&p = *i;
+    size_t m;
+    size_t const n = size();
+    auto const b = begin();
+#pragma omp parallel for private(m)
+    for (m = 0; m < n; ++m) {
+      auto &&p = (*this)[m];
       // Supposing that particle p is located instead at the position xy below,
       // what is the acceleration experienced by p due to all the other
       // particles or approximations (g)?
       auto ig = Integrator{p.xy, p.v};
-      ig.step(dt, [this, &tree, &p, &i](auto xy) {
-        return this->accelerate(tree, {xy, p.radius}, i);
+      ig.step(dt, [this, &tree, &p, b, m](auto xy) {
+        return this->accelerate(tree, {xy, p.radius}, b + m);
       });
       p.xy = ig.y0, p.v = ig.y1;
     }
