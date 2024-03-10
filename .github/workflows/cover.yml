@@ -25,8 +25,10 @@ jobs:
           wget https://apt.llvm.org/llvm.sh
           chmod u+x ./llvm.sh
           sudo ./llvm.sh 17
-          # Raylib
-          sudo apt install libasound2-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libglu1-mesa-dev libxcursor-dev libxinerama-dev
+          # Raylib and Gcovr
+          sudo apt install libasound2-dev libx11-dev libxrandr-dev \
+          libxi-dev libgl1-mesa-dev libglu1-mesa-dev libxcursor-dev libxinerama-dev \
+          gcovr
       - name: Configure CMake for Coverage
         run: >
           cmake -B ${{ steps.strings.outputs.build-output-dir }}
