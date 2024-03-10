@@ -1,0 +1,51 @@
+name: Coverage (GCC, Ubuntu)
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/configure-pages@v4
+      - name: Set reusable strings
+        # Turn repeated input strings (such as the build output directory) into step outputs.
+        # These step outputs can be used throughout the workflow file.
+        id: strings
+        shell: bash
+        run: |
+          echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
+      - name: Instal build dependencies
+        run: |
+          # LLVM 17
+          wget https://apt.llvm.org/llvm.sh
+          chmod u+x ./llvm.sh
+          sudo ./llvm.sh 17
+          # Raylib and Gcovr
+          sudo apt install libasound2-dev libx11-dev libxrandr-dev \
+          libxi-dev libgl1-mesa-dev libglu1-mesa-dev libxcursor-dev libxinerama-dev \
+          gcovr
+      - name: Configure CMake for Coverage
+        run: >
+          cmake -B ${{ steps.strings.outputs.build-output-dir }}
+          -DCMAKE_CXX_COMPILER=g++
+          -DCMAKE_C_COMPILER=gcc
+          -DCOVERAGE=1
+          -DCMAKE_BUILD_TYPE=Debug
+          -S ${{ github.workspace }}
+      - name: Build the unit test executable (units)
+        run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --target units
+      - name: Run the unit tests
+        working-directory: "${{ steps.strings.outputs.build-output-dir }}"
+        run: ctest
+      - name: Apply Gcovr
+        run: gcovr --coveralls > coverage.json
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v3
+        env:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: axionbuster/grass

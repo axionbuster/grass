@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.23)
+﻿cmake_minimum_required(VERSION 3.22)
 project(grass)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -35,6 +35,14 @@ add_subdirectory(demo)
 add_subdirectory(dyn)
 add_subdirectory(quadrantdemo)
 add_subdirectory(hierarchydemo)
+
+if (COVERAGE)
+    # Recommended: GCC on Ubuntu
+    add_compile_options("-fPIC")
+    add_compile_options("--coverage")
+    add_link_options("-lgcov")
+    add_link_options("--coverage")
+endif ()
 
 include(CTest)
 if (BUILD_TESTING)

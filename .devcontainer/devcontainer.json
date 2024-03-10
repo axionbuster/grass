@@ -1,0 +1,17 @@
+{
+  "image": "mcr.microsoft.com/devcontainers/cpp:1.0.9-ubuntu22.04",
+  "features": {
+    "ghcr.io/devcontainers-contrib/features/apt-packages:1": {
+      "packages": [
+        "libasound2-dev",
+        "libx11-dev",
+        "libxrandr-dev",
+        "libxi-dev",
+        "libgl1-mesa-dev",
+        "libglu1-mesa-dev",
+        "libxcursor-dev",
+        "libxinerama-dev"
+      ]
+    }
+  }
+}

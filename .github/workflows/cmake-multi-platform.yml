@@ -133,22 +133,3 @@ jobs:
         # Windows generator is a multi-config generator (Visual Studio generator).
         # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
         run: ctest --build-config ${{ matrix.build_type }}
-
-      - name: Test (Coverage)
-        if: matrix.cxx_flags != ''
-        working-directory: ${{ steps.strings.outputs.build-output-dir }}
-        # In the third line, `tests/units` is the name of the test runner binary.
-        run: |
-          pwd
-          ls
-          ctest --build-config ${{ matrix.build_type }}
-          llvm-profdata-17 merge -sparse tests/default.profraw -o my_profile
-          llvm-cov-17 show -instr-profile my_profile tests/units > coverage.txt
-          ls
-
-      - name: Upload coverage reports to Codecov
-        if: matrix.cxx_flags != ''
-        uses: codecov/codecov-action@v3
-        env:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          slug: axionbuster/grass
