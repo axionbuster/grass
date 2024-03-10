@@ -36,6 +36,14 @@ add_subdirectory(dyn)
 add_subdirectory(quadrantdemo)
 add_subdirectory(hierarchydemo)
 
+if (COVERAGE)
+    # Recommended: GCC on Ubuntu
+    add_compile_options("-fPIC")
+    add_compile_options("--coverage")
+    add_link_options("-lgcov")
+    add_link_options("--coverage")
+endif ()
+
 include(CTest)
 if (BUILD_TESTING)
     add_subdirectory(tests)
