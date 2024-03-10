@@ -10,7 +10,7 @@ add_executable(grass main.cpp
 if (MSVC)
     target_compile_options(grass PRIVATE /W4)
     if (OPENMP)
-        target_compile_options(grass PRIVATE /openmp)
+        target_compile_options(grass PRIVATE /openmp:llvm)
     endif ()
 else ()
     target_compile_options(grass PRIVATE -Wall -Wextra -Wpedantic)
