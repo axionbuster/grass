@@ -3,12 +3,15 @@
 
 #include <algorithm>
 #include <barnes_hut.h>
+#include <cassert>
 #include <circle.h>
+#include <cmath>
 #include <complex>
 #include <cstdint>
 #include <newton.h>
 #include <optional>
 #include <type_traits>
+#include <utility>
 #include <vector>
 #include <verlet.h>
 
@@ -137,10 +140,11 @@ class Table : public std::vector<Particle> {
       auto norm = std::norm(group.xy - circle), rsq = square(group.radius);
       // If a non-singular group either:
       //  - contains the center of `circle` inside said group's circle, or
+      //  - if circles are overlapping, resolve more detail, or
       //  - the (underapproximated) view angle is too wide, then
       // resolve more detail.
-      if (group.many &&
-          (norm < rsq || square(tan_angle_threshold) < rsq / norm))
+      if (group.many && (norm < rsq || norm < square(circle.radius) ||
+                         square(tan_angle_threshold) < rsq / norm))
         return !TRUNCATE;
       // Compute the acceleration due to the group.
       // Also, insert the value of G, the universal gravitational constant, in a
@@ -176,19 +180,24 @@ public:
       else
         return {};
     };
+
     // Compute the Barnes-Hut tree over the particles this has.
-    auto const tree =
-        bh::tree<Physicals<decltype(begin())>>(begin(), end(), morton_masked);
+    using E = Physicals<decltype(begin())>;
+    auto const tree = bh::tree<E>(begin(), end(), morton_masked);
 
     // Iterate over the particles, summing up their forces.
-    for (auto i = begin(); i != end(); ++i) {
-      auto &&p = *i;
-      // Supposing that particle p is located instead at the position xy below,
-      // what is the acceleration experienced by p due to all the other
-      // particles or approximations (g)?
+    auto const b = begin();
+    auto const m = static_cast<int>(size());
+    auto n = 0;
+#pragma omp parallel for
+    for (n = 0; n < m; ++n) {
+      auto &&p = (*this)[n];
+      // Supposing that particle p is located at the position xy below, instead
+      // of p's own xy, what is the acceleration experienced by p due to all the
+      // other particles or approximations (g)?
       auto ig = Integrator{p.xy, p.v};
-      ig.step(dt, [this, &tree, &p, &i](auto xy) {
-        return this->accelerate(tree, {xy, p.radius}, i);
+      ig.step(dt, [this, &tree, &p, b, n](auto xy) {
+        return this->accelerate(tree, {xy, p.radius}, b + n);
       });
       p.xy = ig.y0, p.v = ig.y1;
     }

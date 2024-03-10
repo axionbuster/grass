@@ -19,7 +19,7 @@ jobs:
         shell: bash
         run: |
           echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
-      - name: Instal build dependencies
+      - name: Install build dependencies
         run: |
           # LLVM 17
           wget https://apt.llvm.org/llvm.sh

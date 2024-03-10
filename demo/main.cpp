@@ -2,7 +2,6 @@
 #include <cmath>
 #include <complex>
 #include <cstdlib>
-#include <halton.h>
 #include <random>
 #include <raylib.h>
 #include <stdexcept>
@@ -15,8 +14,12 @@
 #include "Table.h"
 #include "env.h"
 #include "user.h"
+#include <numbers>
+#include <utility>
 
 using namespace phy;
+
+namespace main_program {
 
 /// Constants controlling the program.
 struct Constants {
@@ -53,7 +56,7 @@ struct Constants {
 };
 
 template <typename... Args> static constexpr Table<Args...> figure8() {
-  Table table;
+  Table<Args...> table;
 
   // Make the mystical figure-8 shape below work at first.
   // (This G value is too large in most cases, so I will lower it once the
@@ -211,7 +214,7 @@ struct State {
     EndDrawing();
   }
 
-  User make_user() {
+  User make_user() const {
     User u;
     if (constants.flags.galaxies)
       u.control.demo = false;
@@ -222,10 +225,13 @@ struct State {
     return constants.flags.galaxies ? galaxies(constants) : figure8();
   }
 } state;
+} // namespace main_program
 
-void do_loop() { state.loop(); }
+void do_loop() { main_program::state.loop(); }
 
 static int do_main() {
+  using namespace main_program;
+
   SetConfigFlags(FLAG_WINDOW_RESIZABLE);
   InitWindow(600, 600, "Grass Gravity Simulation");
 

@@ -9,12 +9,12 @@ namespace env {
 
 std::optional<std::string> get(char const *sv) {
 #ifdef _WIN32
-  char *s;
-  size_t n;
+  char *s{};
+  size_t n{};
   // On Windows, _dupenv_s is the Microsoft-recommended way of reading an
   // environment variable. When the variable isn't found, the error (e) is 0 and
   // the count (n) is also 0 (also, the buffer [s] is set to NULL).
-  if (auto e = _dupenv_s(&s, &n, sv); e || !n)
+  if (auto e = _dupenv_s(&s, &n, sv); e || !s)
     return {};
   std::string t{s, n};
   // According to Microsoft, the buffer s must be freed using a call to `free`.

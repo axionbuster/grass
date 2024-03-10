@@ -67,3 +67,24 @@ When publishing the demo online, use a host that uses HTTPS connections.
 
 (Screenshot: Add localhost:8080 as an exception)
 ![Step 2. Add localhost:8080 as an exception](disarm1.png)
+
+## Building with OpenMP Parallelism
+
+On Windows/MSVC, you can build the application with OpenMP-based parallelism applied.
+
+When configuring the project, simply set the `OPENMP` flag:
+
+```
+cmake -B build <... stuff ...> -DOPENMP=1
+```
+
+Build normally.
+
+When running the application, supply the `OMP_WAIT_POLICY` environment variable to `PASSIVE`
+to avoid the spinlocks.
+
+```powershell
+$Env:OMP_WAIT_POLICY = "PASSIVE"
+
+<run the application>
+```
