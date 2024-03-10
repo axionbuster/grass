@@ -1,4 +1,4 @@
-name: CMake on multiple platforms
+name: Coverage (GCC, Ubuntu)
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
       - uses: actions/configure-pages@v4
@@ -27,19 +27,13 @@ jobs:
           sudo ./llvm.sh 17
           # Raylib
           sudo apt install libasound2-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libglu1-mesa-dev libxcursor-dev libxinerama-dev
-          # Emscripten
-          git clone https://github.com/emscripten-core/emsdk.git
-          cd emsdk
-          ./emsdk install latest
-          ./emsdk activate latest
       - name: Configure CMake for Coverage
-        run: |
-          source "/home/runner/work/grass/grass/emsdk/emsdk_env.sh"
-          emcmake cmake -B ${{ steps.strings.outputs.build-output-dir }} \
-          -DCMAKE_CXX_COMPILER=clang++-17 \
-          -DCMAKE_C_COMPILER=clang-17 \
-          -DCOVERAGE=1 \
-          -DCMAKE_BUILD_TYPE=Debug \
+        run: >
+          cmake -B ${{ steps.strings.outputs.build-output-dir }}
+          -DCMAKE_CXX_COMPILER=g++
+          -DCMAKE_C_COMPILER=gcc
+          -DCOVERAGE=1
+          -DCMAKE_BUILD_TYPE=Debug
           -S ${{ github.workspace }}
       - name: Build the unit test executable (units)
         run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --target units
