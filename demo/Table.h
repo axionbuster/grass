@@ -142,6 +142,10 @@ class Table : public std::vector<Particle> {
       if (group.many &&
           (norm < rsq || square(tan_angle_threshold) < rsq / norm))
         return !TRUNCATE;
+      auto dist = std::sqrt(norm);
+      // Oh, also, if circles are overlapping, resolve more detail.
+      if (group.many && dist < circle.radius)
+        return !TRUNCATE;
       // Compute the acceleration due to the group.
       // Also, insert the value of G, the universal gravitational constant, in a
       // way that doesn't stress the single-precision dynamic range.
