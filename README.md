@@ -1,5 +1,7 @@
 # Gravity (*n*-body) simulation
 
+[![codecov](https://codecov.io/github/axionbuster/grass/graph/badge.svg?token=313IVQ3QM7)](https://codecov.io/github/axionbuster/grass)
+
 ![Screenshot](demo/galaxies.png)
 
 My goal is to have a performant real-time n-body simulator that works on all major platforms and that which is
