@@ -49,17 +49,17 @@ struct Particle {
 /// @brief A type of integrator accepted by Table.
 template <typename I, typename F>
 concept IntegratorType = requires(I i, std::complex<F> c) {
-  { I{c, c} } -> std::convertible_to<I>;
-  { i.y0 } -> std::convertible_to<std::complex<F>>;
-  { i.y1 } -> std::convertible_to<std::complex<F>>;
-  // Also, with a function f of type std::complex<F> ->
-  // std::complex<F>, and an F type value h, possible
-  // to advance internal state with the syntax:
-  //    i.step(h, f);
-  // [h ostensibly stands for "step size," F for
-  // "floating point," and f computes the second
-  // derivative from the zeroth derivative.]
-};
+                           { I{c, c} } -> std::convertible_to<I>;
+                           { i.y0 } -> std::convertible_to<std::complex<F>>;
+                           { i.y1 } -> std::convertible_to<std::complex<F>>;
+                           // Also, with a function f of type std::complex<F> ->
+                           // std::complex<F>, and an F type value h, possible
+                           // to advance internal state with the syntax:
+                           //    i.step(h, f);
+                           // [h ostensibly stands for "step size," F for
+                           // "floating point," and f computes the second
+                           // derivative from the zeroth derivative.]
+                         };
 
 /// @brief Store a vector of particles and integrate them using the provided
 /// integrator type.
@@ -140,13 +140,11 @@ class Table : public std::vector<Particle> {
       auto norm = std::norm(group.xy - circle), rsq = square(group.radius);
       // If a non-singular group either:
       //  - contains the center of `circle` inside said group's circle, or
+      //  - if circles are overlapping, resolve more detail, or
       //  - the (underapproximated) view angle is too wide, then
       // resolve more detail.
-      if (group.many &&
-          (norm < rsq || square(tan_angle_threshold) < rsq / norm))
-        return !TRUNCATE;
-      // Oh, also, if circles are overlapping, resolve more detail.
-      if (group.many && norm < square(circle.radius))
+      if (group.many && (norm < rsq || norm < square(circle.radius) ||
+                         square(tan_angle_threshold) < rsq / norm))
         return !TRUNCATE;
       // Compute the acceleration due to the group.
       // Also, insert the value of G, the universal gravitational constant, in a
@@ -182,9 +180,10 @@ public:
       else
         return {};
     };
+
     // Compute the Barnes-Hut tree over the particles this has.
-    auto const tree =
-        bh::tree<Physicals<decltype(begin())>>(begin(), end(), morton_masked);
+    using E = Physicals<decltype(begin())>;
+    auto const tree = bh::tree<E>(begin(), end(), morton_masked);
 
     // Iterate over the particles, summing up their forces.
     auto const b = begin();
@@ -193,9 +192,9 @@ public:
 #pragma omp parallel for
     for (n = 0; n < m; ++n) {
       auto &&p = (*this)[n];
-      // Supposing that particle p is located instead at the position xy below,
-      // what is the acceleration experienced by p due to all the other
-      // particles or approximations (g)?
+      // Supposing that particle p is located at the position xy below, instead
+      // of p's own xy, what is the acceleration experienced by p due to all the
+      // other particles or approximations (g)?
       auto ig = Integrator{p.xy, p.v};
       ig.step(dt, [this, &tree, &p, b, n](auto xy) {
         return this->accelerate(tree, {xy, p.radius}, b + n);
