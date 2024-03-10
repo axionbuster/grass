@@ -3,12 +3,15 @@
 
 #include <algorithm>
 #include <barnes_hut.h>
+#include <cassert>
 #include <circle.h>
+#include <cmath>
 #include <complex>
 #include <cstdint>
 #include <newton.h>
 #include <optional>
 #include <type_traits>
+#include <utility>
 #include <vector>
 #include <verlet.h>
 
@@ -46,17 +49,17 @@ struct Particle {
 /// @brief A type of integrator accepted by Table.
 template <typename I, typename F>
 concept IntegratorType = requires(I i, std::complex<F> c) {
-                           { I{c, c} } -> std::convertible_to<I>;
-                           { i.y0 } -> std::convertible_to<std::complex<F>>;
-                           { i.y1 } -> std::convertible_to<std::complex<F>>;
-                           // Also, with a function f of type std::complex<F> ->
-                           // std::complex<F>, and an F type value h, possible
-                           // to advance internal state with the syntax:
-                           //    i.step(h, f);
-                           // [h ostensibly stands for "step size," F for
-                           // "floating point," and f computes the second
-                           // derivative from the zeroth derivative.]
-                         };
+  { I{c, c} } -> std::convertible_to<I>;
+  { i.y0 } -> std::convertible_to<std::complex<F>>;
+  { i.y1 } -> std::convertible_to<std::complex<F>>;
+  // Also, with a function f of type std::complex<F> ->
+  // std::complex<F>, and an F type value h, possible
+  // to advance internal state with the syntax:
+  //    i.step(h, f);
+  // [h ostensibly stands for "step size," F for
+  // "floating point," and f computes the second
+  // derivative from the zeroth derivative.]
+};
 
 /// @brief Store a vector of particles and integrate them using the provided
 /// integrator type.
@@ -184,18 +187,18 @@ public:
         bh::tree<Physicals<decltype(begin())>>(begin(), end(), morton_masked);
 
     // Iterate over the particles, summing up their forces.
-    size_t m;
-    size_t const n = size();
     auto const b = begin();
-#pragma omp parallel for private(m)
-    for (m = 0; m < n; ++m) {
-      auto &&p = (*this)[m];
+    auto const m = static_cast<int>(size());
+    auto n = 0;
+#pragma omp parallel for
+    for (n = 0; n < m; ++n) {
+      auto &&p = (*this)[n];
       // Supposing that particle p is located instead at the position xy below,
       // what is the acceleration experienced by p due to all the other
       // particles or approximations (g)?
       auto ig = Integrator{p.xy, p.v};
-      ig.step(dt, [this, &tree, &p, b, m](auto xy) {
-        return this->accelerate(tree, {xy, p.radius}, b + m);
+      ig.step(dt, [this, &tree, &p, b, n](auto xy) {
+        return this->accelerate(tree, {xy, p.radius}, b + n);
       });
       p.xy = ig.y0, p.v = ig.y1;
     }

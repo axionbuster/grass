@@ -9,6 +9,9 @@ add_executable(grass main.cpp
 
 if (MSVC)
     target_compile_options(grass PRIVATE /W4)
+    if (OPENMP)
+        target_compile_options(grass PRIVATE /openmp)
+    endif ()
 else ()
     target_compile_options(grass PRIVATE -Wall -Wextra -Wpedantic)
 endif ()
