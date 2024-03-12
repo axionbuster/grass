@@ -5,7 +5,6 @@
 #include <cassert>
 #include <complex>
 #include <cstdint>
-#include <deque>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -30,10 +29,11 @@ constexpr uint64_t interleave32(uint32_t re, uint32_t im) {
   // 00001111..., 0000000011111111...,
   // including until the entire word is like 0...0_1...1_0...0_1...1.
   // (Reverse order, however.)
-  std::array<Help, 5> constexpr H{
-      Help{0x0000ffff0000ffff, 16}, Help{0x00ff00ff00ff00ff, 8},
-      Help{0x0f0f0f0f0f0f0f0f, 4}, Help{0x3333333333333333, 2},
-      Help{0x5555555555555555, 1}};
+  std::array<Help, 5> constexpr H{{{0x0000ffff0000ffff, 16},
+                                   {0x00ff00ff00ff00ff, 8},
+                                   {0x0f0f0f0f0f0f0f0f, 4},
+                                   {0x3333333333333333, 2},
+                                   {0x5555555555555555, 1}}};
 
   // Zero-extend each word.
   std::array<uint64_t, 2> W{re, im};
@@ -72,14 +72,50 @@ std::optional<uint64_t> morton(std::complex<float> xy) {
 
 namespace detail {
 
-template <class, class I> auto tree(I, I, auto &&) noexcept;
+// The API consists of three things:
+
+// 1. Group of particles with one public member function:
+// Depth-first traversal.
+// 2. A niebloid [function-like object] type to delete a tree allocated in the
+// heap. (See the `delete_group` singleton for the actual niebloid).
+// 3. A free function to construct a tree.
+
+template <class, class> struct Group;
+
 struct DeleteGroup;
 
+template <class E, class I>
+std::unique_ptr<Group<E, I>, DeleteGroup> tree(I, I, auto &&) noexcept;
+
+// end API
+
 /// A group of particles.
-template <class I, class E> class Group {
-  template <class, class J> friend auto tree(J, J, auto &&) noexcept;
+template <class E, class I> struct Group {
+  template <class F, class J>
+  friend std::unique_ptr<Group<F, J>, DeleteGroup> tree(J, J, auto &&) noexcept;
   friend struct DeleteGroup;
 
+  /// Apply depth-first traversal. If `deeper` suggests going deeper (true),
+  /// go deeper.
+  void depth_first(auto &&deeper) const {
+    assert(!this->sibling);
+    std::vector<Group const *> v;
+    v.reserve(131); // Some good enough prime number.
+    v.push_back(this);
+    while (!v.empty()) {
+      auto h = v.back();
+      v.pop_back();
+      if (deeper(h->extra))
+        for (auto a = h->child; a; a = a->sibling)
+          v.push_back(a);
+    }
+  }
+
+  /// Allow hypothetical construction in the stack (no such public method exists
+  /// as of writing).
+  ~Group() = default;
+
+private:
   /// First and last particles, respectively.
   I first, last;
 
@@ -89,9 +125,6 @@ template <class I, class E> class Group {
 
   /// User-provided extra physical data.
   E extra;
-
-private:
-  ~Group() = default;
 
   Group(Group const &g) = delete;
   Group &operator=(Group const &g) = delete;
@@ -126,7 +159,7 @@ private:
   void depth_first_delete() noexcept {
     assert(!this->sibling);
     std::vector<Group *> v;
-    v.reserve(113); // Some good enough prime number.
+    v.reserve(131); // Some good enough prime number.
     v.push_back(this);
     while (!v.empty()) {
       auto h = v.back();
@@ -136,25 +169,12 @@ private:
       delete h;
     }
   }
-
-public:
-  /// Apply depth-first traversal. If `deeper` suggests going deeper (true),
-  /// go deeper.
-  void depth_first(auto &&deeper) const {
-    assert(!this->sibling);
-    std::vector<Group const *> v;
-    v.reserve(113); // Some good enough prime number.
-    v.push_back(this);
-    while (!v.empty()) {
-      auto h = v.back();
-      v.pop_back();
-      if (deeper(h->extra))
-        for (auto a = h->child; a; a = a->sibling)
-          v.push_back(a);
-    }
-  }
 };
 
+/// A niebloid [function-like object] that deletes a heap-allocated tree
+/// (possibly null); available for public usage (for example, in case the inner
+/// pointer of the smart pointer was released.) See the `delete_group` singleton
+/// for more.
 struct DeleteGroup {
   template <class G> void operator()(G *const g) const noexcept {
     if (g)
@@ -162,8 +182,6 @@ struct DeleteGroup {
   }
 };
 
-/// Delete a group thoroughly in depth-first order.
-/// Use as a deleter for smart pointers.
 inline DeleteGroup constexpr delete_group;
 
 /// Construct a tree ranging from the particle at `first` and the end delimited
@@ -173,13 +191,14 @@ inline DeleteGroup constexpr delete_group;
 /// AND.
 /// @returns A pointer to the root node of the tree.
 template <class E, class I>
-auto tree(I const first, I const last, auto &&z) noexcept {
+std::unique_ptr<Group<E, I>, DeleteGroup> tree(I const first, I const last,
+                                               auto &&z) noexcept {
   struct {
     uint64_t mask = ~uint64_t{};
     void shift() { mask <<= 2; }
   } state;
-  using G = Group<I, E>;
-  using P = std::unique_ptr<G, DeleteGroup>;
+  using G = Group<E, I>;
+  using P = std::unique_ptr<Group<E, I>, DeleteGroup>;
 
   // Check for degeneracies (0 or 1 particle cases)
   if (first == last)
@@ -188,8 +207,10 @@ auto tree(I const first, I const last, auto &&z) noexcept {
     return P{new G{first, last}, delete_group};
 
   // Two or more particles.
-  // Make layers (q).
-  auto q = std::deque<G *>{};
+  // Build the tree from the bottom layer and up.
+
+  // Lowest layer (q).
+  auto q = std::vector<G *>{};
 
   // First, turn every particle into a group.
   for (auto f = first; f != last; ++f) {
@@ -201,19 +222,21 @@ auto tree(I const first, I const last, auto &&z) noexcept {
     q[i]->sibling = q[i + 1];
   state.shift();
 
-  // Now, actually make the layers.
+  // Now, make higher layers (lower levels of detail).
 
   // Find the Z-code with the lowest few bits zeroed out.
   auto prefix = [&state, &z](auto &&p) { return z(p, state.mask); };
 
+  // A higher layer (q2).
   decltype(q) q2{};
+  q2.reserve(q.size());
   while (state.mask) {
     q2.clear();
     // Scan the queue (q) and then bring every subarray of groups with the same
     // Z-prefix under a common parent.
     assert(q.size());
-    auto top = q.front();
-    q.pop_front();
+    auto qit = q.begin();
+    auto top = *qit++;
     class B {
       /// First particle.
       I first;
@@ -249,7 +272,8 @@ auto tree(I const first, I const last, auto &&z) noexcept {
     // Repeatedly compare the prefixes with the leading parent group to decide
     // whether to create a new parent group or to merge with the leading group.
     auto z0 = prefix(*parent.get_first());
-    for (auto &&g : q) {
+    for (; qit != q.end(); ++qit) {
+      auto g = *qit;
       auto z1 = prefix(*g->first);
       if (z0 == z1) {
         // Same prefix.
@@ -266,7 +290,6 @@ auto tree(I const first, I const last, auto &&z) noexcept {
     // Unconditional runoff: Handle it.
     q2.push_back(parent.pop());
     // Create or override siblings relationships in new layer (q2).
-    assert(q2.size());
     for (typename decltype(q2)::size_type i = 0; i < q2.size() - 1; i++)
       q2[i]->sibling = q2[i + 1];
     // Recognize lower level as children.
