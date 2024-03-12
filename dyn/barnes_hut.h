@@ -238,14 +238,11 @@ std::unique_ptr<Group<E, I>, DeleteGroup> tree(I const first, I const last,
     auto qit = q.begin();
     auto top = *qit++;
     class B {
-      /// First particle.
-      I first;
-
       /// Earliest and latest groups, respectively.
       G *group0, *group1;
 
     public:
-      explicit B(G *const g) noexcept : first{g->first}, group0{g}, group1{g} {}
+      explicit B(G *const g) noexcept : group0{g}, group1{g} {}
 
       /// Admit a group.
       void merge(G *const g) noexcept { group1 = g; }
@@ -258,7 +255,7 @@ std::unique_ptr<Group<E, I>, DeleteGroup> tree(I const first, I const last,
           return group1;
         // Many groups.
         assert(group0->sibling);
-        auto h = new G{first, group1->last};
+        auto h = new G{group0->first, group1->last};
         // Say "no" to aliasing.
         group1->sibling = {};
         // Admit the first group as the child.
@@ -267,7 +264,7 @@ std::unique_ptr<Group<E, I>, DeleteGroup> tree(I const first, I const last,
       }
 
       /// Get the first particle.
-      [[nodiscard]] I get_first() const noexcept { return first; }
+      [[nodiscard]] I get_first() const noexcept { return group0->first; }
     } parent{top};
     // Repeatedly compare the prefixes with the leading parent group to decide
     // whether to create a new parent group or to merge with the leading group.
