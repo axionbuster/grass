@@ -108,7 +108,7 @@ static Table<Args...> galaxies(Constants constants) {
     auto dot = [](auto a, auto b) -> std::complex<float> {
       return {a.real() * b.real(), a.imag() * b.imag()};
     };
-    auto pan = d.normal_xy(rng) * 3.0f;
+    auto pan = d.normal_xy(rng) * 5.0f;
     // Line through (100, 1) and (2500, 3) [N, curve].
     auto curve = 11.0f / 12.0f + N / 1200.0f;
     auto spin = std::polar(curve, d.angle(rng));
