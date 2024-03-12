@@ -43,28 +43,21 @@ public:
   /// universal gravitational constant ("G") to get L/T/T.
   std::complex<F> field(Circle<F> c0, Circle<F> c1, F m1,
                         F distance = F(-1)) const noexcept {
+    auto constexpr cube = [](auto x) { return x * x * x; };
+
     // Use complex arithmetic to translate the coordinate system so that c0
     // appears to be at the origin, but let the respective radii be unaffected.
     c1 -= c0;
 
-    // Are the circles...
-    auto s = c1.radius + c0.radius, d = std::abs(c1.radius - c0.radius),
-         r = distance < F{} ? std::abs(c1) : distance;
-    if (!r)
-      // Accidental overlap? Ignore the current frame.
-      return {};
-    if (s <= r) {
-      auto t = F(1) / r;
-      // Disjoint? Use the usual law, treating these circles as point
-      // particles whose masses are concentrated at the given centers.
-      return t * t * t * m1 * c1;
-    } else if (d <= r)
-      // Intersecting?
-      return when_intersecting(c0.radius, c1, m1);
-    else
-      // Or, does one circle fully contain the other? Then, apply the shell
-      // theorem to get a net force of zero.
-      return {};
+    if (auto r = distance > F{} ? distance : std::abs(c1)) {
+      if (c1.radius + c0.radius <= r)
+        // Disjoint circles? Use the usual law, treating these circles as point
+        // particles whose masses are concentrated at the given centers.
+        return cube(F(1) / r) * m1 * c1;
+      return non_disjoint(c0.radius, c1, m1);
+    }
+    // If actual distance [r] is 0, do nothing.
+    return {};
   }
 
   /// @brief Populate internal random disk (used for calculating forces in the
@@ -96,21 +89,26 @@ private:
   /// @param c1 Center and radius of source particle.
   /// @param m1 Mass of particle c1.
   /// @return Vector quantity of dimensions M/L/L.
-  std::complex<F> when_intersecting(F r0, Circle<F> c1, F m1) const noexcept {
+  std::complex<F> non_disjoint(F r0, Circle<F> c1, F m1) const noexcept {
     // Assuming uniform mass distribution (by area), divide the test particle's
     // circle into many small pieces. To each particle, apply Newton's shell
-    // theorem: (a) Inside a radially symmetrical body, no force is felt due to
-    // that body; (b) outside it, the force is as though its mass [m1] was
-    // concentrated at the center of it [c1].
+    // theorem: (a) Inside a radially symmetrical, area-uniformly distributed
+    // massive body, the force varies linearly to the distance; (b) outside it,
+    // the force is as though its mass [m1] was concentrated at the center of it
+    // [c1].
 
     // Unweighted inverse-square summation (b).
     std::complex<F> b;
     for (auto &&p : disk) {
       auto q = c1 - r0 * p;
-      auto rsq = std::norm(q);
-      if (c1.radius * c1.radius < rsq)
-        // rsq should neither be too small nor too large.
-        b += F(1) / rsq * (F(1) / std::sqrt(rsq)) * q;
+      auto r = std::abs(q);
+      auto cube = [](auto x) { return x * x * x; };
+      if (c1.radius < r)
+        // Point p outside circle (c1) [represented by point q].
+        b += cube(F(1) / r) * q;
+      else
+        // Point p inside circle (c1) [ditto].
+        b += q;
     }
 
     // Converting constexpr integer N_MONTE to floating point constexpr is

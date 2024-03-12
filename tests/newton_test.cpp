@@ -68,7 +68,7 @@ TEST_F(NewtonSuite, PassThrough0) {
   if (t > 0)
     ASSERT_NEAR(pi4, t, 0.05f);
   else if (t < 0)
-    ASSERT_NEAR(mpi34, 4, 0.05f);
+    ASSERT_NEAR(mpi34, t, 0.05f);
   else
     FAIL() << "(angle t = " << t << " neither positive nor negative)";
 }
@@ -85,12 +85,11 @@ TEST_F(NewtonSuite, Inside0) {
 
   // Go!
   auto accel = [&](auto xy) { return this->common_accel(xy, c0); };
-  for (long i = 0; i < steps; i++) {
+  for (long i = 0; i < steps; i++)
     yoshi.step(dt, accel);
-  }
 
   auto v = std::abs(yoshi.y1);
-  ASSERT_EQ(v, 0);
+  ASSERT_NEAR(v, 0.0f, 0.1f);
 }
 
 TEST_F(NewtonSuite, Figure8) {
