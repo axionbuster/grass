@@ -4,7 +4,7 @@
 
 ![Screenshot](demo/galaxies.png)
 
-Real-time n-body simulator that works on all major platforms and that which is reasonably, statistically accurate.
+Real-time n-body simulator that works on all major platforms and that which is (hopefully) reasonably, statistically accurate.
 
 *The project contains a fast bottom-up Barnes-Hut tree building routine.*
 
